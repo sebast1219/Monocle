@@ -234,7 +234,7 @@ class Worker:
             await self.random_sleep(.5, 4)
 
             request = self.api.create_request()
-            request.mark_tutorial_complete(tutorials_completed=1)
+            request.mark_tutorial_complete(tutorials_completed=(1,))
             await self.call(request, buddy=False)
 
         await self.random_sleep(.5, 1)
@@ -353,7 +353,7 @@ class Worker:
         if 0 not in tutorial_state:
             # legal screen
             request = self.api.create_request()
-            request.mark_tutorial_complete(tutorials_completed=[0])
+            request.mark_tutorial_complete(tutorials_completed=(0,))
             await self.call(request, buddy=False)
 
             await self.random_sleep(.35, .525)
@@ -413,14 +413,14 @@ class Worker:
             await sleep(.13, loop=LOOP)
 
             request = self.api.create_request()
-            request.mark_tutorial_complete(tutorials_completed=4)
+            request.mark_tutorial_complete(tutorials_completed=(4,))
             await self.call(request, buddy=False)
 
         if 7 not in tutorial_state:
             # first time experience
             await self.random_sleep(3.9, 4.5)
             request = self.api.create_request()
-            request.mark_tutorial_complete(tutorials_completed=7)
+            request.mark_tutorial_complete(tutorials_completed=(7,))
             await self.call(request)
 
         if starter_id:
