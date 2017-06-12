@@ -1223,6 +1223,7 @@ class Worker:
             'type': 'pokemon',
             'encounter_id': raw.encounter_id,
             'pokemon_id': raw.pokemon_data.pokemon_id,
+            'cp': raw.pokemon_data.cp,
             'lat': raw.latitude,
             'lon': raw.longitude,
             'spawn_id': int(raw.spawn_point_id, 16) if spawn_int else raw.spawn_point_id,
