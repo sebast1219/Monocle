@@ -994,6 +994,7 @@ class Worker:
             pokemon['individual_stamina'] = pdata.individual_stamina
             pokemon['height'] = pdata.height_m
             pokemon['weight'] = pdata.weight_kg
+            pokemon['cp'] = pdata['cp']
             pokemon['gender'] = pdata.pokemon_display.gender
         except KeyError:
             self.log.error('Missing encounter response.')
@@ -1223,7 +1224,6 @@ class Worker:
             'type': 'pokemon',
             'encounter_id': raw.encounter_id,
             'pokemon_id': raw.pokemon_data.pokemon_id,
-            'cp': raw.pokemon_data.cp,
             'lat': raw.latitude,
             'lon': raw.longitude,
             'spawn_id': int(raw.spawn_point_id, 16) if spawn_int else raw.spawn_point_id,
