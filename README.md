@@ -1,6 +1,6 @@
 # Monocle
 
-[![Build Status](https://travis-ci.org/Noctem/Monocle.svg)](https://travis-ci.org/Noctem/Monocle)
+[![Build Status](https://travis-ci.org/Noctem/Monocle.svg?branch=develop)](https://travis-ci.org/Noctem/Monocle)
 
 Monocle is the distinguished Pokémon Go scanner capable of scanning large areas for spawns. Features spawnpoint scanning, Twitter and PushBullet notifications, accurate expiration times and estimates based on historical data, pokestop and gym collection, a CAPTCHA solving script, and more.
 
@@ -53,6 +53,7 @@ Since it uses [Leaflet](http://leafletjs.com/) for mapping, the appearance and d
     * *asyncpushbullet* is required for PushBullet notifications
     * *peony-twitter* is required for Twitter notifications
     * *gpsoauth* is required for logging in to Google accounts
+    * *shapely* is required for landmarks or boundary polygons
     * *selenium* (and [ChromeDriver](https://sites.google.com/a/chromium.org/chromedriver/)) are required for manually solving CAPTCHAs
     * *uvloop* provides better event loop performance
     * *pycairo* is required for generating IV/move images

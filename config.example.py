@@ -1,4 +1,4 @@
-### All lines that are commented out (and many that aren't) are optional ###
+### All lines that are commented out (and some that aren't) are optional ###
 
 DB_ENGINE = 'sqlite:///db.sqlite'
 #DB_ENGINE = 'mysql://user:pass@localhost/monocle'
@@ -7,13 +7,13 @@ DB_ENGINE = 'sqlite:///db.sqlite'
 AREA_NAME = 'SLC'     # the city or region you are scanning
 LANGUAGE = 'EN'       # ISO 639-1 codes EN, DE, ES, FR, IT, JA, KO, PT, or ZH for Pokémon/move names
 MAX_CAPTCHAS = 100    # stop launching new visits if this many CAPTCHAs are pending
-SCAN_DELAY = 10.0     # wait at least this many seconds before scanning with the same account
+SCAN_DELAY = 10       # wait at least this many seconds before scanning with the same account
 SPEED_UNIT = 'miles'  # valid options are 'miles', 'kilometers', 'meters'
 SPEED_LIMIT = 19.5    # limit worker speed to this many SPEED_UNITs per hour
 
 # The number of simultaneous workers will be these two numbers multiplied.
 # On the initial run, workers will arrange themselves in a grid across the
-# the boundaries you define below.
+# rectangle you defined with MAP_START and MAP_END.
 # The rows/columns will also be used for the dot grid in the console output.
 # Provide more accounts than the product of your grid to allow swapping.
 GRID = (4, 4)  # rows, columns
@@ -22,35 +22,22 @@ GRID = (4, 4)  # rows, columns
 # any spawn points have been discovered
 MAP_START = (40.7913, -111.9398)
 MAP_END = (40.7143, -111.8046)
+
 # do not visit spawn points outside of your MAP_START and MAP_END rectangle
+# the boundaries will be the rectangle created by MAP_START and MAP_END, unless
 STAY_WITHIN_MAP = True
-
-## alternatively define a polygon to use as boundaries
-## must be a tuple of tuples (containing coordinates for vertices)
-## if BOUNDARIES is set, MAP_START, MAP_END, and STAY_WITHIN_MAP will be ignored
-#BOUNDARIES = ((40.799609, -111.948556), (40.792749, -111.887341), (40.779264, -111.838078), (40.761410, -111.817908), (40.728636, -111.805293), (40.688833, -111.785564), (40.689768, -111.919389), (40.750461, -111.949938))
-
-## alternatively define multiple polygons to use as boundaries
-## must be a tuple of tuples of tuples (containing coordinates for vertices)
-#MULTI_BOUNDARIES = (((40.252083, -111.654868), (40.24589, -111.65413), (40.2454018, -111.64340), (40.252509, -111.64268)), ((40.2388, -111.643066), (40.23894, -111.63165), (40.23426, -111.63311), (40.2354, -111.64014)))
-
-## if using BOUNDARIES or MULTI_BOUNDARIES you may define polygonal holes
-## workers will stay out of these holes as if they were out of bounds
-## must be a tuple of tuples of tuples
-# for only one hole do a tuple of tuples and a trailing comma, like so:
-#HOLES = ((40.795, -111.94), (40.79, -111.88), (40.77, -111.83)),
 
 # ensure that you visit within this many meters of every part of your map during bootstrap
 # lower values are more thorough but will take longer
 BOOTSTRAP_RADIUS = 120
 
-GIVE_UP_KNOWN = 75.0    # try to find a worker for a known spawn for this many seconds before giving up
-GIVE_UP_UNKNOWN = 60.0  # try to find a worker for an unknown point for this many seconds before giving up
-SKIP_SPAWN = 90.0         # don't even try to find a worker for a spawn if the spawn time was more than this many seconds ago
+GIVE_UP_KNOWN = 75   # try to find a worker for a known spawn for this many seconds before giving up
+GIVE_UP_UNKNOWN = 60 # try to find a worker for an unknown point for this many seconds before giving up
+SKIP_SPAWN = 90      # don't even try to find a worker for a spawn if the spawn time was more than this many seconds ago
 
 # How often should the mystery queue be reloaded (default 90s)
 # this will reduce the grouping of workers around the last few mysteries
-#RESCAN_UNKNOWN = 90.0
+#RESCAN_UNKNOWN = 90
 
 # filename of accounts CSV
 ACCOUNTS_CSV = 'accounts.csv'
@@ -71,10 +58,17 @@ SIMULTANEOUS_SIMULATION = 10
 # Immediately select workers whose speed are below (SPEED_UNIT)p/h instead of
 # continuing to try to find the worker with the lowest speed.
 # May increase clustering if you have a high density of workers.
-GOOD_ENOUGH = 1.0
+GOOD_ENOUGH = 0.1
 
 # Seconds to sleep after failing to find an eligible worker before trying again.
 SEARCH_SLEEP = 2.5
+
+## alternatively define a Polygon to use as boundaries (requires shapely)
+## if BOUNDARIES is set, STAY_WITHIN_MAP will be ignored
+## more information available in the shapely manual:
+## http://toblerity.org/shapely/manual.html#polygons
+#from shapely.geometry import Polygon
+#BOUNDARIES = Polygon(((40.799609, -111.948556), (40.792749, -111.887341), (40.779264, -111.838078), (40.761410, -111.817908), (40.728636, -111.805293), (40.688833, -111.785564), (40.689768, -111.919389), (40.750461, -111.949938)))
 
 # key for Bossland's hashing server, otherwise the old hashing lib will be used
 #HASH_KEY = '9d87af14461b93cb3605'  # this key is fake
@@ -91,7 +85,7 @@ SEARCH_SLEEP = 2.5
 # Defaults to whatever will allow every worker to be swapped within 6 hours
 #SWAP_OLDEST = 300  # 5 minutes
 # Only swap if it's been active for more than x minutes
-#MINIMUM_RUNTIME = 10.0
+#MINIMUM_RUNTIME = 10
 
 ### these next 6 options use more requests but look more like the real client
 APP_SIMULATION = True     # mimic the actual app's login requests
@@ -105,11 +99,11 @@ INCUBATE_EGGS = True      # incubate eggs if available
 # 'notifying' will encounter Pokémon that are eligible for notifications
 # None will never encounter Pokémon
 ENCOUNTER = None
-#ENCOUNTER_IDS = {3, 6, 9, 45, 62, 71, 80, 85, 87, 89, 91, 94, 114, 130, 131, 134}
+#ENCOUNTER_IDS = (3, 6, 9, 45, 62, 71, 80, 85, 87, 89, 91, 94, 114, 130, 131, 134)
 
 # PokéStops
 SPIN_POKESTOPS = True  # spin all PokéStops that are within range
-SPIN_COOLDOWN = 300.0  # spin only one PokéStop every n seconds
+SPIN_COOLDOWN = 300    # spin only one PokéStop every n seconds (default 300)
 
 # minimum number of each item to keep if the bag is cleaned
 # bag cleaning is disabled if this is not present or is commented out
@@ -135,7 +129,7 @@ ITEM_LIMITS = {
 # Update the console output every x seconds
 REFRESH_RATE = 0.75  # 750ms
 # Update the seen/speed/visit/speed stats every x seconds
-STAT_REFRESH = 5.0
+STAT_REFRESH = 5
 
 # sent with GET_PLAYER requests, should match your region
 PLAYER_LOCALE = {'country': 'US', 'language': 'en', 'timezone': 'America/Denver'}
@@ -146,17 +140,20 @@ MAX_RETRIES = 3
 # number of seconds before timing out on a login request
 LOGIN_TIMEOUT = 2.5
 
+# add spawn points reported in cell_ids to the unknown spawns list
+#MORE_POINTS = False
+
 # Set to True to kill the scanner when a newer version is forced
 #FORCED_KILL = False
 
 # exclude these Pokémon from the map by default (only visible in trash layer)
-TRASH_IDS = {
+TRASH_IDS = (
     16, 19, 21, 29, 32, 41, 46, 48, 50, 52, 56, 74, 77, 96, 111, 133,
     161, 163, 167, 177, 183, 191, 194
-}
+)
 
 # include these Pokémon on the "rare" report
-RARE_IDS = {3, 6, 9, 45, 62, 71, 80, 85, 87, 89, 91, 94, 114, 130, 131, 134}
+RARE_IDS = (3, 6, 9, 45, 62, 71, 80, 85, 87, 89, 91, 94, 114, 130, 131, 134)
 
 from datetime import datetime
 REPORT_SINCE = datetime(2017, 2, 17)  # base reports on data from after this date
@@ -164,14 +161,13 @@ REPORT_SINCE = datetime(2017, 2, 17)  # base reports on data from after this dat
 # used for altitude queries and maps in reports
 #GOOGLE_MAPS_KEY = 'OYOgW1wryrp2RKJ81u7BLvHfYUA6aArIyuQCXu4'  # this key is fake
 REPORT_MAPS = True  # Show maps on reports
+#ALT_RANGE = (1250, 1450)  # Fall back to altitudes in this range if Google query fails
 
-## S2 cell level to fetch altitudes for
-## Higher levels will lead to a larger cache and more Google Elevation API requests
-## Average diameter of some levels:
-## 9: 17.85km, 10: 8.93km, 11: 4.46km, 12: 2.23km, 13: 1.12km, 14: 558m, 15: 279m
-#ALT_LEVEL = 13
-
-#ALT_RANGE = (390.0, 490.0)  # Fall back to altitudes in this range if Google query fails
+## Round altitude coordinates to this many decimal places
+## More precision will lead to larger caches and more Google API calls
+## Maximum distance from coords to rounded coords for precisions (at Lat40):
+## 1: 7KM, 2: 700M, 3: 70M, 4: 7M
+#ALT_PRECISION = 2
 
 ## Automatically resolve captchas using 2Captcha key.
 #CAPTCHA_KEY = '1abc234de56fab7c89012d34e56fa7b8'
@@ -183,7 +179,7 @@ REPORT_MAPS = True  # Show maps on reports
 # allow displaying the live location of workers on the map
 MAP_WORKERS = True
 # filter these Pokemon from the map to reduce traffic and browser load
-#MAP_FILTER_IDS = (16, 19, 161, 165, 167)
+#MAP_FILTER_IDS = [161, 165, 16, 19, 167]
 
 # unix timestamp of last spawn point migration, spawn times learned before this will be ignored
 LAST_MIGRATION = 1481932800  # Dec. 17th, 2016
@@ -212,8 +208,11 @@ FAILURES_ALLOWED = 2
 #MANAGER_ADDRESS = ('127.0.0.1', 5002)  # could be used for CAPTCHA solving and live worker maps on remote systems
 
 # Store the cell IDs so that they don't have to be recalculated every visit.
-# Enabling will increase memory usage.
+# Enabling will (potentially drastically) increase memory usage.
 #CACHE_CELLS = False
+
+# Only for use with web_sanic (requires PostgreSQL)
+#DB = {'host': '127.0.0.1', 'user': 'monocle_role', 'password': 'pik4chu', 'port': '5432', 'database': 'monocle'}
 
 # Disable to use Python's event loop even if uvloop is installed
 #UVLOOP = True
@@ -250,7 +249,7 @@ HASHTAGS = {AREA_NAME, 'Monocle', 'PokemonGO'}
 #TZ_OFFSET = 0  # UTC offset in hours (if different from system time)
 
 # the required number of seconds remaining to notify about a Pokémon
-TIME_REQUIRED = 600.0  # 10 minutes
+TIME_REQUIRED = 600  # 10 minutes
 
 ### Only set either the NOTIFY_RANKING or NOTIFY_IDS, not both!
 # The (x) rarest Pokémon will be eligible for notification. Whether a
@@ -286,7 +285,7 @@ ALWAYS_NOTIFY = 14
 # Pokémon scores are an average of the Pokémon's rarity score and IV score (from 0 to 1)
 # If NOTIFY_RANKING is 90, the 90th most common Pokémon will have a rarity of score 0, the rarest will be 1.
 # IV score is the IV sum divided by 45 (perfect IVs).
-FULL_TIME = 1800.0   # the number of seconds after a notification when only MINIMUM_SCORE will be required
+FULL_TIME = 1800  # the number of seconds after a notification when only MINIMUM_SCORE will be required
 INITIAL_SCORE = 0.7  # the required score immediately after a notification
 MINIMUM_SCORE = 0.4  # the required score after FULL_TIME seconds have passed
 
@@ -314,8 +313,18 @@ MINIMUM_SCORE = 0.4  # the required score after FULL_TIME seconds have passed
 
 
 ##### Referencing landmarks in your tweets/notifications
-## Appended to OpenStreetMap queries if a query and query_suffix aren't provided
-QUERY_SUFFIX = 'Salt Lake City'
+
+#### It is recommended to store the LANDMARKS object in a pickle to reduce startup
+#### time if you are using queries. An example script for this is in:
+#### scripts/pickle_landmarks.example.py
+#from pickle import load
+#with open('pickles/landmarks.pickle', 'rb') as f:
+#    LANDMARKS = load(f)
+
+### if you do pickle it, just load the pickle and omit everything below this point
+
+#from monocle.landmarks import Landmarks
+#LANDMARKS = Landmarks(query_suffix=AREA_NAME)
 
 # Landmarks to reference when Pokémon are nearby
 # If no points are specified then it will query OpenStreetMap for the coordinates
@@ -329,18 +338,20 @@ QUERY_SUFFIX = 'Salt Lake City'
 # When selecting a landmark, non-areas will be chosen first if any are close enough
 # the default phrase is 'in' for areas and 'at' for non-areas, but can be overriden for either.
 
-''' # these triple quotes are block comments, remove them to fill in your own landmarks
-LANDMARKS = (
-    # since no points or query is provided, the names provided will be queried and suffixed with QUERY_SUFFIX
-    {'name': 'Rice Eccles Stadium', 'shortname': 'Rice Eccles', 'hashtags': ['Utes']},
-    {'name': 'the Salt Lake Temple', 'shortname': 'the temple', 'hashtags': ['TempleSquare']},
-    # provide two corner points to create a square for this area
-    {'name': 'City Creek Center', 'points': ((40.769210, -111.893901), (40.767231, -111.888275)), 'hashtags': ['CityCreek']},
-    # provide a query that is different from the landmark name so that OpenStreetMap finds the correct one
-    {'name': 'the State Capitol', 'shortname': 'the Capitol', 'query': 'Utah State Capitol Building'},
-    # query using name, override the default area phrase so that it says 'at (name)' instead of 'in'
-    {'name': 'the University of Utah', 'shortname': 'the U of U', 'hashtags': ['Utes'], 'phrase': 'at', 'is_area': True},
-    # provide corner points to create a polygon of the area since OpenStreetMap does not have a shape for it
-    {'name': 'Yalecrest', 'points': ((40.7502, -111.8365), (40.7503, -111.8511), (40.7515, -111.8538), (40.7412, -111.8539), (40.7411, -111.8365)), 'is_area': True}
-)
-'''
+### replace these with well-known places in your area
+
+## since no points or query is provided, the names provided will be queried and suffixed with AREA_NAME
+#LANDMARKS.add('Rice Eccles Stadium', shortname='Rice Eccles', hashtags={'Utes'})
+#LANDMARKS.add('the Salt Lake Temple', shortname='the temple', hashtags={'TempleSquare'})
+
+## provide two corner points to create a square for this area
+#LANDMARKS.add('City Creek Center', points=((40.769210, -111.893901), (40.767231, -111.888275)), hashtags={'CityCreek'})
+
+## provide a query that is different from the landmark name so that OpenStreetMap finds the correct one
+#LANDMARKS.add('the State Capitol', shortname='the Capitol', query='Utah State Capitol Building')
+
+### area examples ###
+## query using name, override the default area phrase so that it says 'at (name)' instead of 'in'
+#LANDMARKS.add('the University of Utah', shortname='the U of U', hashtags={'Utes'}, phrase='at', is_area=True)
+## provide corner points to create a polygon of the area since OpenStreetMap does not have a shape for it
+#LANDMARKS.add('Yalecrest', points=((40.750263, -111.836502), (40.750377, -111.851108), (40.751515, -111.853833), (40.741212, -111.853909), (40.741188, -111.836519)), is_area=True)

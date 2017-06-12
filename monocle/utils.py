@@ -3,17 +3,44 @@ import socket
 from os import mkdir
 from os.path import join, exists
 from sys import platform
+from asyncio import sleep
+from math import sqrt
 from uuid import uuid4
+from enum import Enum
 from csv import DictReader
-from cyrandom import choice
+from cyrandom import choice, shuffle, uniform
 from time import time
 from pickle import dump as pickle_dump, load as pickle_load, HIGHEST_PROTOCOL
 
-from pogeo import Location
+from geopy import Point
+from geopy.distance import distance
 from aiopogo import utilities as pgoapi_utils
 from pogeo import get_distance
 
 from . import bounds, sanitized as conf
+
+
+IPHONES = {'iPhone5,1': 'N41AP',
+           'iPhone5,2': 'N42AP',
+           'iPhone5,3': 'N48AP',
+           'iPhone5,4': 'N49AP',
+           'iPhone6,1': 'N51AP',
+           'iPhone6,2': 'N53AP',
+           'iPhone7,1': 'N56AP',
+           'iPhone7,2': 'N61AP',
+           'iPhone8,1': 'N71AP',
+           'iPhone8,2': 'N66AP',
+           'iPhone8,4': 'N69AP',
+           'iPhone9,1': 'D10AP',
+           'iPhone9,2': 'D11AP',
+           'iPhone9,3': 'D101AP',
+           'iPhone9,4': 'D111AP'}
+
+
+class Units(Enum):
+    miles = 1
+    kilometers = 2
+    meters = 3
 
 
 def best_factors(n):
@@ -34,15 +61,69 @@ def percentage_split(seq, percentages):
 
 def get_start_coords(worker_no, grid=conf.GRID, bounds=bounds):
     """Returns center of square for given worker"""
-    per_column = (grid[0] * grid[1]) // grid[0]
+    per_column = int((grid[0] * grid[1]) / grid[0])
 
     column = worker_no % per_column
-    row = worker_no // per_column
+    row = int(worker_no / per_column)
     part_lat = (bounds.south - bounds.north) / grid[0]
     part_lon = (bounds.east - bounds.west) / grid[1]
     start_lat = bounds.north + part_lat * row + part_lat / 2
     start_lon = bounds.west + part_lon * column + part_lon / 2
-    return Location(start_lat, start_lon)
+    return start_lat, start_lon
+
+
+def float_range(start, end, step):
+    """range for floats, also capable of iterating backwards"""
+    if start > end:
+        while end <= start:
+            yield start
+            start += -step
+    else:
+        while start <= end:
+            yield start
+            start += step
+
+
+def get_gains(dist=70):
+    """Returns lat and lon gain
+
+    Gain is space between circles.
+    """
+    start = Point(*bounds.center)
+    base = dist * sqrt(3)
+    height = base * sqrt(3) / 2
+    dis_a = distance(meters=base)
+    dis_h = distance(meters=height)
+    lon_gain = dis_a.destination(point=start, bearing=90).longitude
+    lat_gain = dis_h.destination(point=start, bearing=0).latitude
+    return abs(start.latitude - lat_gain), abs(start.longitude - lon_gain)
+
+
+def round_coords(point, precision, _round=round):
+    return _round(point[0], precision), _round(point[1], precision)
+
+
+def get_bootstrap_points(bounds):
+    coords = []
+    if bounds.multi:
+        for b in bounds.polygons:
+            coords.extend(get_bootstrap_points(b))
+        return coords
+    lat_gain, lon_gain = get_gains(conf.BOOTSTRAP_RADIUS)
+    west, east = bounds.west, bounds.east
+    bound = bool(bounds)
+    for map_row, lat in enumerate(
+        float_range(bounds.south, bounds.north, lat_gain)
+    ):
+        row_start_lon = west
+        if map_row % 2 != 0:
+            row_start_lon -= 0.5 * lon_gain
+        for lon in float_range(row_start_lon, east, lon_gain):
+            point = lat, lon
+            if not bound or point in bounds:
+                coords.append(point)
+    shuffle(coords)
+    return coords
 
 
 def get_device_info(account):
@@ -50,24 +131,12 @@ def get_device_info(account):
                    'device': 'iPhone',
                    'manufacturer': 'Apple'}
     try:
-        device_info['product'] = 'iOS' if account['iOS'].startswith('1') else 'iPhone OS'
+        if account['iOS'].startswith('1'):
+            device_info['product'] = 'iOS'
+        else:
+            device_info['product'] = 'iPhone OS'
         device_info['hardware'] = account['model'] + '\x00'
-        iphones = {'iPhone5,1': 'N41AP',
-                   'iPhone5,2': 'N42AP',
-                   'iPhone5,3': 'N48AP',
-                   'iPhone5,4': 'N49AP',
-                   'iPhone6,1': 'N51AP',
-                   'iPhone6,2': 'N53AP',
-                   'iPhone7,1': 'N56AP',
-                   'iPhone7,2': 'N61AP',
-                   'iPhone8,1': 'N71AP',
-                   'iPhone8,2': 'N66AP',
-                   'iPhone8,4': 'N69AP',
-                   'iPhone9,1': 'D10AP',
-                   'iPhone9,2': 'D11AP',
-                   'iPhone9,3': 'D101AP',
-                   'iPhone9,4': 'D111AP'}
-        device_info['model'] = iphones[account['model']] + '\x00'
+        device_info['model'] = IPHONES[account['model']] + '\x00'
     except (KeyError, AttributeError):
         account = generate_device_info(account)
         return get_device_info(account)
@@ -81,7 +150,8 @@ def generate_device_info(account):
     ios9 = ('9.0', '9.0.1', '9.0.2', '9.1', '9.2', '9.2.1', '9.3', '9.3.1', '9.3.2', '9.3.3', '9.3.4', '9.3.5')
     ios10 = ('10.0', '10.0.1', '10.0.2', '10.0.3', '10.1', '10.1.1', '10.2', '10.2.1', '10.3', '10.3.1', '10.3.2')
 
-    account['model'] = choice(('iPhone5,1', 'iPhone5,2', 'iPhone5,3', 'iPhone5,4', 'iPhone6,1', 'iPhone6,2', 'iPhone7,1', 'iPhone7,2', 'iPhone8,1', 'iPhone8,2', 'iPhone8,4', 'iPhone9,1', 'iPhone9,2', 'iPhone9,3', 'iPhone9,4'))
+    devices = tuple(IPHONES.keys())
+    account['model'] = choice(devices)
 
     account['id'] = uuid4().hex
 
@@ -242,3 +312,12 @@ def load_accounts_csv():
         for row in reader:
             accounts[row['username']] = dict(row)
     return accounts
+
+
+def randomize_point(point, amount=0.0003, randomize=uniform):
+    '''Randomize point, by up to ~47 meters by default.'''
+    lat, lon = point
+    return (
+        randomize(lat - amount, lat + amount),
+        randomize(lon - amount, lon + amount)
+    )

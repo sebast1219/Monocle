@@ -11,9 +11,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from monocle import sanitized as conf
-from monocle.altitudes import load_alts, set_altitude
-from monocle.utils import get_device_info, get_address
+from monocle import altitudes, sanitized as conf
+from monocle.utils import get_device_info, get_address, randomize_point
 from monocle.bounds import center
 
 
@@ -46,7 +45,6 @@ async def solve_captcha(url, api, driver, timestamp):
 
 async def main():
     try:
-        load_alts()
         class AccountManager(BaseManager): pass
         AccountManager.register('captcha_queue')
         AccountManager.register('extra_queue')
@@ -63,18 +61,22 @@ async def main():
         while not captcha_queue.empty():
             account = captcha_queue.get()
             username = account.get('username')
-            try:
-                location = account['loc']
-            except Exception:
-                location = center
-                location.jitter(0.0001, 0.0001, 2.0)
+            location = account.get('location')
+            if location and location != (0,0,0):
+                lat = location[0]
+                lon = location[1]
+            else:
+                lat, lon = randomize_point(center, 0.0001)
 
-            set_altitude(location)
+            try:
+                alt = altitudes.get((lat, lon))
+            except KeyError:
+                alt = await altitudes.fetch((lat, lon))
 
             try:
                 device_info = get_device_info(account)
                 api = PGoApi(device_info=device_info)
-                api.location = location
+                api.set_position(lat, lon, alt)
 
                 authenticated = False
                 try:
@@ -109,7 +111,7 @@ async def main():
 
                 challenge_url = responses['CHECK_CHALLENGE'].challenge_url
                 timestamp = responses['GET_INVENTORY'].inventory_delta.new_timestamp_ms
-                account['location'] = location
+                account['location'] = lat, lon
                 account['inventory_timestamp'] = timestamp
                 if challenge_url == ' ':
                     account['captcha'] = False

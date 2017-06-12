@@ -3,22 +3,20 @@
 from pkg_resources import resource_filename
 from time import time
 
-from asyncpg import create_pool
-from jinja2 import Environment, PackageLoader, Markup
 from sanic import Sanic
-from sanic.response import html, HTTPResponse, json
-from pogeo.monotools.aiosightingcache import AioSightingCache
-from pogeo.monotools.aiospawncache import AioSpawnCache
+from sanic.response import html, json
+from jinja2 import Environment, PackageLoader, Markup
+from asyncpg import create_pool
 
-from monocle import bounds, names, sanitized as conf
-from monocle.web_utils import get_worker_markers, Workers, get_args
+from monocle import sanitized as conf
+from monocle.bounds import center
+from monocle.names import DAMAGE, MOVES, POKEMON
+from monocle.web_utils import get_scan_coords, get_worker_markers, Workers, get_args
 
 
 env = Environment(loader=PackageLoader('monocle', 'templates'))
 app = Sanic(__name__)
 app.static('/static', resource_filename('monocle', 'static'))
-_SIGHTINGS = AioSightingCache(conf, names)
-_SPAWNS = AioSpawnCache(conf.SPAWN_ID_INT)
 
 
 def social_links():
@@ -52,7 +50,7 @@ def render_map():
     template = env.get_template('custom.html' if conf.LOAD_CUSTOM_HTML_FILE else 'newmap.html')
     return html(template.render(
         area_name=conf.AREA_NAME,
-        map_center=bounds.center,
+        map_center=center,
         map_provider_url=conf.MAP_PROVIDER_URL,
         map_provider_attribution=conf.MAP_PROVIDER_ATTRIBUTION,
         social_links=social_links(),
@@ -65,7 +63,7 @@ def render_worker_map():
     template = env.get_template('workersmap.html')
     return html(template.render(
         area_name=conf.AREA_NAME,
-        map_center=bounds.center,
+        map_center=center,
         map_provider_url=conf.MAP_PROVIDER_URL,
         map_provider_attribution=conf.MAP_PROVIDER_ATTRIBUTION,
         social_links=social_links()
@@ -95,21 +93,19 @@ del env
 
 
 @app.get('/data')
-async def pokemon_data(request, _cache=_SIGHTINGS):
-    try:
-        compress = 'gzip' in request.headers['Accept-Encoding'].lower()
-    except KeyError:
-        compress = False
-    body = await _cache.get_json(int(request.args.get('last_id', 0)), compress)
-    return HTTPResponse(
-        body_bytes=body,
-        content_type='application/json',
-        headers={'Content-Encoding': 'gzip'} if compress else None)
-
+async def pokemon_data(request, _time=time):
+    last_id = request.args.get('last_id', 0)
+    async with app.pool.acquire() as conn:
+        results = await conn.fetch('''
+            SELECT id, pokemon_id, expire_timestamp, lat, lon, atk_iv, def_iv, sta_iv, move_1, move_2
+            FROM sightings
+            WHERE expire_timestamp > {} AND id > {}
+        '''.format(_time(), last_id))
+    return json(list(map(sighting_to_marker, results)))
 
 
 @app.get('/gym_data')
-async def gym_data(request, names=names.POKEMON, _str=str):
+async def gym_data(request, names=POKEMON, _str=str):
     async with app.pool.acquire() as conn:
         results = await conn.fetch('''
             SELECT
@@ -142,35 +138,51 @@ async def gym_data(request, names=names.POKEMON, _str=str):
 
 
 @app.get('/spawnpoints')
-async def spawn_points(request, _cache=_SPAWNS):
-    try:
-        compress = 'gzip' in request.headers['Accept-Encoding'].lower()
-    except KeyError:
-        compress = False
-    body = await _cache.get_json(compress)
-    return HTTPResponse(
-        body_bytes=body,
-        content_type='application/json',
-        headers={'Content-Encoding': 'gzip'} if compress else None)
+async def spawn_points(request, _dict=dict):
+    async with app.pool.acquire() as conn:
+         results = await conn.fetch('SELECT spawn_id, despawn_time, lat, lon, duration FROM spawnpoints')
+    return json([_dict(x) for x in results])
 
 
 @app.get('/pokestops')
-async def get_pokestops(request):
+async def get_pokestops(request, _dict=dict):
     async with app.pool.acquire() as conn:
         results = await conn.fetch('SELECT external_id, lat, lon FROM pokestops')
-    return json(results)
+    return json([_dict(x) for x in results])
 
 
 @app.get('/scan_coords')
-async def scan_coords(request, _response=HTTPResponse(body_bytes=bounds.json, content_type='application/json')):
-    return _response
+async def scan_coords(request):
+    return json(get_scan_coords())
+
+
+def sighting_to_marker(pokemon, names=POKEMON, moves=MOVES, damage=DAMAGE, trash=conf.TRASH_IDS, _str=str):
+    pokemon_id = pokemon['pokemon_id']
+    marker = {
+        'id': 'pokemon-' + _str(pokemon['id']),
+        'trash': pokemon_id in trash,
+        'name': names[pokemon_id],
+        'pokemon_id': pokemon_id,
+        'lat': pokemon['lat'],
+        'lon': pokemon['lon'],
+        'expires_at': pokemon['expire_timestamp'],
+    }
+    move1 = pokemon['move_1']
+    if move1:
+        move2 = pokemon['move_2']
+        marker['atk'] = pokemon['atk_iv']
+        marker['def'] = pokemon['def_iv']
+        marker['sta'] = pokemon['sta_iv']
+        marker['move1'] = moves[move1]
+        marker['move2'] = moves[move2]
+        marker['damage1'] = damage[move1]
+        marker['damage2'] = damage[move2]
+    return marker
 
 
 @app.listener('before_server_start')
 async def register_db(app, loop):
-    app.pool = await create_pool(dsn=conf.DB_ENGINE, loop=loop)
-    _SIGHTINGS.initialize(loop, app.pool)
-    _SPAWNS.initialize(loop, app.pool)
+    app.pool = await create_pool(**conf.DB, loop=loop)
 
 
 def main():

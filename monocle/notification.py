@@ -8,14 +8,12 @@ from asyncio import gather, CancelledError, TimeoutError
 
 from aiohttp import ClientError, ClientResponseError, ServerTimeoutError
 from aiopogo import json_dumps, json_loads
-from pogeo import Location
 
-from . import sanitized as conf
+from .utils import load_pickle, dump_pickle
 from .db import session_scope, get_pokemon_ranking, estimate_remaining_time
-from .landmarks import Landmarks
 from .names import MOVES, POKEMON
 from .shared import get_logger, SessionManager, LOOP, run_threaded
-from .utils import load_pickle, dump_pickle
+from . import sanitized as conf
 
 
 WEBHOOK = False
@@ -228,13 +226,10 @@ class PokeImage:
 
 
 class Notification:
-    landmarks = (Landmarks(conf.LANDMARKS, conf.QUERY_SUFFIX)
-                 if conf.LANDMARKS and (TWITTER or PUSHBULLET) else None)
-
     def __init__(self, pokemon, score, time_of_day):
         self.pokemon = pokemon
         self.name = POKEMON[pokemon['pokemon_id']]
-        self.coordinates = Location(pokemon['lat'], pokemon['lon'])
+        self.coordinates = pokemon['lat'], pokemon['lon']
         self.score = score
         self.time_of_day = time_of_day
         self.log = get_logger('notifier')
@@ -261,6 +256,11 @@ class Notification:
         else:
             _tz = None
         now = datetime.fromtimestamp(pokemon['seen'], _tz)
+
+        if TWITTER and conf.HASHTAGS:
+            self.hashtags = conf.HASHTAGS.copy()
+        else:
+            self.hashtags = set()
 
         # check if expiration time is known, or a range
         try:
@@ -289,19 +289,18 @@ class Notification:
                     now + max_delta).strftime('%I:%M %p').lstrip('0')
 
         self.map_link = 'https://maps.google.com/maps?q={0[0]:.5f},{0[1]:.5f}'.format(self.coordinates)
+        self.place = None
 
     async def notify(self):
-        if self.landmarks:
-            self.landmark = self.landmarks.find_landmark(self.coordinates)
+        if conf.LANDMARKS and (TWITTER or PUSHBULLET):
+            self.landmark = conf.LANDMARKS.find_landmark(self.coordinates)
+
+        try:
             self.place = self.landmark.generate_string(self.coordinates)
-            if TWITTER:
-                self.hashtags = conf.HASHTAGS.copy() if conf.HASHTAGS else set()
-                if self.landmark.hashtags:
-                    self.hashtags.update(self.landmark.hashtags)
-        else:
+            if TWITTER and self.landmark.hashtags:
+                self.hashtags.update(self.landmark.hashtags)
+        except AttributeError:
             self.place = self.generic_place_string()
-            if TWITTER:
-                self.hashtags = conf.HASHTAGS.copy() if conf.HASHTAGS else set()
 
         if PUSHBULLET or TELEGRAM:
             try:

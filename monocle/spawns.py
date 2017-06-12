@@ -2,26 +2,20 @@ import sys
 
 from collections import deque, OrderedDict
 from time import time
+from itertools import chain
+from hashlib import sha256
 
 from . import bounds, db, sanitized as conf
 from .shared import get_logger
 from .utils import dump_pickle, load_pickle, get_current_hour, time_until_time
 
-contains_spawn = bounds.contains_cellid if conf.SPAWN_ID_INT else bounds.contains_token
 
-
-class Spawns:
+class BaseSpawns:
     """Manage spawn points and times"""
-
-    __spec__ = __spec__
-    __slots__ = ('known', 'despawn_times', 'unknown', 'log')
-
     def __init__(self):
         ## Spawns with known times
-        # {spawn_id: spawn_seconds}
+        # {(lat, lon): (spawn_id, spawn_seconds)}
         self.known = OrderedDict()
-
-        # points may not be in bounds, but are visible from within bounds
         # {spawn_id: despawn_seconds}
         self.despawn_times = {}
 
@@ -29,6 +23,8 @@ class Spawns:
         # {(lat, lon)}
         self.unknown = set()
 
+        self.class_version = 3
+        self.db_hash = sha256(conf.DB_ENGINE.encode()).digest()
         self.log = get_logger('spawns')
 
     def __len__(self):
@@ -37,56 +33,64 @@ class Spawns:
     def __bool__(self):
         return len(self.despawn_times) > 0
 
-    def items(self):
-        return self.known.items()
+    def update(self):
+        bound = bool(bounds)
+        last_migration = conf.LAST_MIGRATION
 
-    def add_known(self, spawn_id, despawn_time):
-        self.despawn_times[spawn_id] = despawn_time
-        self.unknown.discard(spawn_id)
-
-    def update(self, _migration=conf.LAST_MIGRATION, _contains=contains_spawn):
-        known = {}
         with db.session_scope() as session:
-            query = session.query(db.Spawnpoint.spawn_id, db.Spawnpoint.despawn_time, db.Spawnpoint.duration, db.Spawnpoint.updated)
-            for spawn_id, despawn_time, duration, updated in query:
+            query = session.query(db.Spawnpoint)
+            if bound or conf.STAY_WITHIN_MAP:
+                query = query.filter(db.Spawnpoint.lat >= bounds.south,
+                                     db.Spawnpoint.lat <= bounds.north,
+                                     db.Spawnpoint.lon >= bounds.west,
+                                     db.Spawnpoint.lon <= bounds.east)
+            known = {}
+            for spawn in query:
+                point = spawn.lat, spawn.lon
+
                 # skip if point is not within boundaries (if applicable)
-                if not _contains(spawn_id):
+                if bound and point not in bounds:
                     continue
 
-                if not updated or updated < _migration:
-                    self.unknown.add(spawn_id)
+                if not spawn.updated or spawn.updated <= last_migration:
+                    self.unknown.add(point)
                     continue
 
-                self.despawn_times[spawn_id] = despawn_time
+                if spawn.duration == 60:
+                    spawn_time = spawn.despawn_time
+                else:
+                    spawn_time = (spawn.despawn_time + 1800) % 3600
 
-                known[spawn_id] = despawn_time if duration == 60 else (despawn_time + 1800) % 3600
-        if known:
-            self.known = OrderedDict(sorted(known.items(), key=lambda k: k[1]))
+                self.despawn_times[spawn.spawn_id] = spawn.despawn_time
+                known[point] = spawn.spawn_id, spawn_time
+        self.known = OrderedDict(sorted(known.items(), key=lambda k: k[1][1]))
 
     def after_last(self):
         try:
             k = next(reversed(self.known))
-            return time() % 3600 > self.known[k]
+            seconds = self.known[k][1]
+            return time() % 3600 > seconds
         except (StopIteration, KeyError, TypeError):
             return False
 
     def get_despawn_time(self, spawn_id, seen):
+        hour = get_current_hour(now=seen)
         try:
-            despawn_time = self.despawn_times[spawn_id] + get_current_hour(now=seen)
-            return despawn_time if seen < despawn_time else despawn_time + 3600
+            despawn_time = self.despawn_times[spawn_id] + hour
+            if seen > despawn_time:
+                despawn_time += 3600
+            return despawn_time
         except KeyError:
             return None
 
     def unpickle(self):
         try:
             state = load_pickle('spawns', raise_exception=True)
-            if (state['class_version'] == 4
-                    and state['db_hash'] == db.DB_HASH
-                    and state['bounds_hash'] == hash(bounds)
-                    and state['last_migration'] == conf.LAST_MIGRATION):
-                self.despawn_times = state['despawn_times']
-                self.known = state['known']
-                self.unknown = state['unknown']
+            if all((state['class_version'] == self.class_version,
+                    state['db_hash'] == self.db_hash,
+                    state['bounds_hash'] == hash(bounds),
+                    state['last_migration'] == conf.LAST_MIGRATION)):
+                self.__dict__.update(state)
                 return True
             else:
                 self.log.warning('Configuration changed, reloading spawns from DB.')
@@ -97,18 +101,79 @@ class Spawns:
         return False
 
     def pickle(self):
-        dump_pickle('spawns', {
-            'bounds_hash': hash(bounds),
-            'class_version': 4,
-            'db_hash': db.DB_HASH,
-            'despawn_times': self.despawn_times,
-            'known': self.known,
-            'last_migration': conf.LAST_MIGRATION,
-            'unknown': self.unknown})
+        state = self.__dict__.copy()
+        del state['log']
+        state.pop('cells_count', None)
+        state['bounds_hash'] = hash(bounds)
+        state['last_migration'] = conf.LAST_MIGRATION
+        dump_pickle('spawns', state)
 
     @property
     def total_length(self):
-        return len(self.despawn_times) + len(self.unknown)
+        return len(self.despawn_times) + len(self.unknown) + self.cells_count
 
 
-sys.modules[__name__] = Spawns()
+class Spawns(BaseSpawns):
+    def __init__(self):
+        super().__init__()
+        self.cells_count = 0
+
+    def items(self):
+        return self.known.items()
+
+    def add_known(self, spawn_id, despawn_time, point):
+        self.despawn_times[spawn_id] = despawn_time
+        self.unknown.discard(point)
+
+    def add_unknown(self, point):
+        self.unknown.add(point)
+
+    def unpickle(self):
+        result = super().unpickle()
+        try:
+            del self.cell_points
+        except AttributeError:
+            pass
+        return result
+
+    def mystery_gen(self):
+        for mystery in self.unknown.copy():
+            yield mystery
+
+
+class MoreSpawns(BaseSpawns):
+    def __init__(self):
+        super().__init__()
+
+        ## Coordinates mentioned as "spawn_points" in GetMapObjects response
+        ## May or may not be actual spawn points, more research is needed.
+        # {(lat, lon)}
+        self.cell_points = set()
+
+    def items(self):
+        # return a copy since it may be modified
+        return self.known.copy().items()
+
+    def add_known(self, spawn_id, despawn_time, point):
+        self.despawn_times[spawn_id] = despawn_time
+        # add so that have_point() will be up to date
+        self.known[point] = None
+        self.unknown.discard(point)
+        self.cell_points.discard(point)
+
+    def add_unknown(self, point):
+        self.unknown.add(point)
+        self.cell_points.discard(point)
+
+    def have_point(self, point):
+        return point in chain(self.cell_points, self.known, self.unknown)
+
+    def mystery_gen(self):
+        for mystery in chain(self.unknown.copy(), self.cell_points.copy()):
+            yield mystery
+
+    @property
+    def cells_count(self):
+        return len(self.cell_points)
+
+sys.modules[__name__] = MoreSpawns() if conf.MORE_POINTS else Spawns()

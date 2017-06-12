@@ -10,12 +10,12 @@ try:
 except ImportError:
     from json import dumps
 
-from flask import Flask, jsonify, make_response, Markup, render_template, request
-from pogeo.monotools.sightingcache import SightingCache
-from pogeo.monotools.spawncache import SpawnCache
+from flask import Flask, jsonify, Markup, render_template, request
 
-from monocle import bounds, db, names, sanitized as conf
+from monocle import db, sanitized as conf
+from monocle.names import POKEMON
 from monocle.web_utils import *
+from monocle.bounds import area, center
 
 
 app = Flask(__name__, template_folder=resource_filename('monocle', 'templates'), static_folder=resource_filename('monocle', 'static'))
@@ -52,7 +52,7 @@ def render_map():
     template = app.jinja_env.get_template('custom.html' if conf.LOAD_CUSTOM_HTML_FILE else 'newmap.html')
     return template.render(
         area_name=conf.AREA_NAME,
-        map_center=bounds.center,
+        map_center=center,
         map_provider_url=conf.MAP_PROVIDER_URL,
         map_provider_attribution=conf.MAP_PROVIDER_ATTRIBUTION,
         social_links=social_links(),
@@ -65,7 +65,7 @@ def render_worker_map():
     template = app.jinja_env.get_template('workersmap.html')
     return template.render(
         area_name=conf.AREA_NAME,
-        map_center=bounds.center,
+        map_center=center,
         map_provider_url=conf.MAP_PROVIDER_URL,
         map_provider_attribution=conf.MAP_PROVIDER_ATTRIBUTION,
         social_links=social_links()
@@ -78,22 +78,9 @@ def fullmap(map_html=render_map()):
 
 
 @app.route('/data')
-def pokemon_data(
-        cache=SightingCache(conf, db, names),
-        _resp=make_response):
-    try:
-        compress = 'gzip' in request.headers['Accept-Encoding'].lower()
-    except KeyError:
-        compress = False
-    try:
-        last_id = int(request.args['last_id'])
-    except KeyError:
-        last_id = 0
-    response = _resp(cache.get_json(last_id, compress))
-    response.mimetype = 'application/json'
-    if compress:
-        response.headers['Content-Encoding'] = 'gzip'
-    return response
+def pokemon_data():
+    last_id = request.args.get('last_id', 0)
+    return jsonify(get_pokemarkers(last_id))
 
 
 @app.route('/gym_data')
@@ -102,29 +89,18 @@ def gym_data():
 
 
 @app.route('/spawnpoints')
-def spawn_points(
-        cache=SpawnCache(conf.SPAWN_ID_INT, db),
-        _resp=make_response):
-    compress = 'gzip' in request.headers.get('Accept-Encoding', '').lower()
-    response = _resp(cache.get_json(compress))
-    response.mimetype = 'application/json'
-    if compress:
-        response.headers['Content-Encoding'] = 'gzip'
-    return response
+def spawn_points():
+    return jsonify(get_spawnpoint_markers())
 
 
 @app.route('/pokestops')
-def get_pokestops(_scope=db.session_scope, _stop=db.Pokestop):
-    with _scope() as session:
-        pokestops = session.query(_stop.external_id, _stop.lat, _stop.lon)
-        return jsonify(pokestops.all())
+def get_pokestops():
+    return jsonify(get_pokestop_markers())
 
 
 @app.route('/scan_coords')
-def scan_coords(_coords=bounds.json, _resp=make_response):
-    response = _resp(_coords)
-    response.mimetype = 'application/json'
-    return response
+def scan_coords():
+    return jsonify(get_scan_coords())
 
 
 if conf.MAP_WORKERS:
@@ -143,7 +119,7 @@ if conf.MAP_WORKERS:
 
 @app.route('/report')
 def report_main(area_name=conf.AREA_NAME,
-                names=names.POKEMON,
+                names=POKEMON,
                 key=conf.GOOGLE_MAPS_KEY if conf.REPORT_MAPS else None):
     with db.session_scope() as session:
         counts = db.get_sightings_per_pokemon(session)
@@ -177,7 +153,7 @@ def report_main(area_name=conf.AREA_NAME,
             'maps_data': {
                 'rare': [sighting_to_report_marker(s) for s in rare_sightings],
             },
-            'map_center': bounds.center,
+            'map_center': center,
             'zoom': 13,
         }
     icons = {
@@ -191,7 +167,7 @@ def report_main(area_name=conf.AREA_NAME,
         'report.html',
         current_date=datetime.now(),
         area_name=area_name,
-        area_size=bounds.area,
+        area_size=area,
         total_spawn_count=count,
         spawns_per_hour=count // session_stats['length_hours'],
         session_start=session_stats['start'],
@@ -213,16 +189,16 @@ def report_single(pokemon_id,
             'charts_data': {
                 'hours': db.get_spawns_per_hour(session, pokemon_id),
             },
-            'map_center': bounds.center,
+            'map_center': center,
             'zoom': 13,
         }
         return render_template(
             'report_single.html',
             current_date=datetime.now(),
             area_name=area_name,
-            area_size=bounds.area,
+            area_size=area,
             pokemon_id=pokemon_id,
-            pokemon_name=names.POKEMON[pokemon_id],
+            pokemon_name=POKEMON[pokemon_id],
             total_spawn_count=db.get_total_spawns_count(session, pokemon_id),
             session_start=session_stats['start'],
             session_end=session_stats['end'],

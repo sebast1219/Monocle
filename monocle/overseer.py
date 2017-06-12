@@ -8,15 +8,13 @@ from itertools import dropwhile
 from time import time, monotonic
 
 from aiopogo import HashServer
-from pogeo import diagonal_distance, level_edge
 from sqlalchemy.exc import OperationalError
 
 from .db import SIGHTING_CACHE, MYSTERY_CACHE
-from .utils import get_current_hour, dump_pickle, get_start_coords, best_factors, percentage_split
-from .shared import ACCOUNTS, get_logger, LOOP, run_threaded
-from . import bounds, db_proc, spawnid_to_loc, spawns, sanitized as conf
+from .utils import get_current_hour, dump_pickle, get_start_coords, get_bootstrap_points, randomize_point, best_factors, percentage_split
+from .shared import get_logger, LOOP, run_threaded, ACCOUNTS
+from . import bounds, db_proc, spawns, sanitized as conf
 from .worker import Worker
-
 
 ANSI = '\x1b[2J\x1b[H'
 if platform == 'win32':
@@ -33,7 +31,7 @@ if platform == 'win32':
         from os import system
         ANSI = ''
 
-BAD_STATUSES = {
+BAD_STATUSES = (
     'FAILED LOGIN',
     'EXCEPTION',
     'NOT AUTHENTICATED',
@@ -53,24 +51,7 @@ BAD_STATUSES = {
     'HASHING ERROR',
     'PROXY ERROR',
     'TIMEOUT'
-}
-
-_unit = conf.SPEED_UNIT.lower()
-if _unit == 'miles':
-    # miles/hour to meters/second, default to 19.5mph
-    SPEED_LIMIT = conf.SPEED_LIMIT * 0.44704 if conf.SPEED_LIMIT else 8.71728
-    GOOD_ENOUGH = conf.GOOD_ENOUGH * 0.44704 if conf.GOOD_ENOUGH else 0.44704
-elif _unit == 'kilometers':
-    # kilometers/hour to meters/second, default to 31.38km/h
-    SPEED_LIMIT = conf.SPEED_LIMIT * 1000 / 3600 if conf.SPEED_LIMIT else 8.71728
-    GOOD_ENOUGH = conf.GOOD_ENOUGH * 1000 / 3600 if conf.GOOD_ENOUGH else 0.44704
-elif _unit == 'meters':
-    # meters/hour to meters/second
-    SPEED_LIMIT = conf.SPEED_LIMIT / 3600 if conf.SPEED_LIMIT else 8.71728
-    GOOD_ENOUGH = conf.GOOD_ENOUGH / 3600 if conf.GOOD_ENOUGH else 0.44704
-else:
-    raise ValueError("Valid speed units are: 'miles', 'kilometers', and 'meters'")
-del _unit
+)
 
 
 class Overseer:
@@ -189,11 +170,11 @@ class Overseer:
 
         self.update_coroutines_count()
         self.counts = (
-            'Known spawns: {}, unknown: {}\n'
+            'Known spawns: {}, unknown: {}, more: {}\n'
             '{} workers, {} coroutines\n'
             'sightings cache: {}, mystery cache: {}, DB queue: {}\n'
         ).format(
-            len(spawns), len(spawns.unknown),
+            len(spawns), len(spawns.unknown), spawns.cells_count,
             count, self.coroutines_count,
             len(SIGHTING_CACHE), len(MYSTERY_CACHE), len(db_proc)
         )
@@ -268,8 +249,8 @@ class Overseer:
         ]
 
         try:
-            seen = Worker.seen
-            captchas = Worker.captchas
+            seen = Worker.g['seen']
+            captchas = Worker.g['captchas']
             output.append('Seen per visit: {v:.2f}, per minute: {m:.0f}'.format(
                 v=seen / self.visits, m=seen / (seconds_since_start / 60)))
 
@@ -327,7 +308,7 @@ class Overseer:
             if w.start_time < earliest:
                 worker = w
                 earliest = w.start_time
-        minutes = (monotonic() - earliest) / 60.0
+        minutes = ((time() * 1000) - earliest) / 60000
         return worker, minutes
 
     def get_start_point(self):
@@ -335,12 +316,12 @@ class Overseer:
         now = time() % 3600
         closest = None
 
-        for spawn_id, spawn_time in spawns.known.items():
+        for spawn_id, spawn_time in spawns.known.values():
             time_diff = now - spawn_time
-            if 0.0 < time_diff < smallest_diff:
+            if 0 < time_diff < smallest_diff:
                 smallest_diff = time_diff
                 closest = spawn_id
-            if smallest_diff < 3.0:
+            if smallest_diff < 3:
                 break
         return closest
 
@@ -349,7 +330,6 @@ class Overseer:
             try:
                 await run_threaded(spawns.update)
                 LOOP.create_task(run_threaded(spawns.pickle))
-                return
             except OperationalError as e:
                 self.log.exception('Operational error while trying to update spawns.')
                 if initial:
@@ -360,6 +340,8 @@ class Overseer:
             except Exception as e:
                 self.log.exception('A wild {} appeared while updating spawns!', e.__class__.__name__)
                 await sleep(15, loop=LOOP)
+            else:
+                break
 
     async def launch(self, bootstrap, pickle):
         exceptions = 0
@@ -376,7 +358,7 @@ class Overseer:
                 return
 
         update_spawns = False
-        self.mysteries = iter(spawns.unknown.copy())
+        self.mysteries = spawns.mystery_gen()
         while True:
             try:
                 await self._launch(update_spawns)
@@ -401,7 +383,7 @@ class Overseer:
             start_point = self.get_start_point()
             if start_point and not spawns.after_last():
                 spawns_iter = dropwhile(
-                    lambda s: s[0] != start_point, spawns.items())
+                    lambda s: s[1][0] != start_point, spawns.items())
             else:
                 spawns_iter = iter(spawns.items())
 
@@ -411,7 +393,7 @@ class Overseer:
 
         captcha_limit = conf.MAX_CAPTCHAS
         skip_spawn = conf.SKIP_SPAWN
-        for spawn_id, spawn_seconds in spawns_iter:
+        for point, (spawn_id, spawn_seconds) in spawns_iter:
             try:
                 if self.captcha_queue.qsize() > captcha_limit:
                     self.paused = True
@@ -426,15 +408,15 @@ class Overseer:
             # positive = already happened
             time_diff = time() - spawn_time
 
-            while time_diff < 0.4:
+            while time_diff < 0.5:
                 try:
-                    mystery_id = next(self.mysteries)
+                    mystery_point = next(self.mysteries)
 
                     await self.coroutine_semaphore.acquire()
-                    LOOP.create_task(self.try_spawn(mystery_id, skip_time=conf.GIVE_UP_UNKNOWN))
+                    LOOP.create_task(self.try_point(mystery_point))
                 except StopIteration:
                     if self.next_mystery_reload < monotonic():
-                        self.mysteries = iter(spawns.unknown.copy())
+                        self.mysteries = spawns.mystery_gen()
                         self.next_mystery_reload = monotonic() + conf.RESCAN_UNKNOWN
                     else:
                         await sleep(min(spawn_time - time() + .5, self.next_mystery_reload - monotonic()), loop=LOOP)
@@ -448,13 +430,13 @@ class Overseer:
                 continue
 
             await self.coroutine_semaphore.acquire()
-            LOOP.create_task(self.try_spawn(spawn_id, spawn_time))
+            LOOP.create_task(self.try_point(point, spawn_time, spawn_id))
 
     async def try_again(self, point):
         async with self.coroutine_semaphore:
             worker = await self.best_worker(point, False)
             async with worker.busy:
-                if await worker.visit_point(point):
+                if await worker.visit(point):
                     self.visits += 1
 
     async def bootstrap(self):
@@ -477,7 +459,7 @@ class Overseer:
         self.log.warning('Starting bootstrap phase 3.')
         unknowns = list(spawns.unknown)
         shuffle(unknowns)
-        tasks = (self.try_again(point) for point in map(spawnid_to_loc, unknowns))
+        tasks = (self.try_again(point) for point in unknowns)
         await gather(*tasks, loop=LOOP)
         self.log.warning('Finished bootstrapping.')
 
@@ -506,25 +488,22 @@ class Overseer:
     async def bootstrap_two(self):
         async def bootstrap_try(point):
             async with self.coroutine_semaphore:
-                point.jitter(lat_amount, lon_amount)
-                LOOP.call_later(1790, LOOP.create_task, self.try_again(point))
+                randomized = randomize_point(point, randomization)
+                LOOP.call_later(1790, LOOP.create_task, self.try_again(randomized))
                 worker = await self.best_worker(point, False)
                 async with worker.busy:
                     self.visits += await worker.bootstrap_visit(point)
 
         # randomize to within ~140m of the nearest neighbor on the second visit
-        if conf.BOOTSTRAP_LEVEL < 17:
-            lat_amount, lon_amount = diagonal_distance(bounds.center, level_edge(conf.BOOSTRAP_LEVEL) - 140.0)
-        else:
-            lat_amount = lon_amount = 0.0
-        tasks = (bootstrap_try(p) for p in bounds.get_points(bootstrap_level))
+        randomization = conf.BOOTSTRAP_RADIUS / 155555 - 0.00045
+        tasks = (bootstrap_try(x) for x in get_bootstrap_points(bounds))
         await gather(*tasks, loop=LOOP)
 
-    async def try_spawn(self, spawn_id, spawn_time=None, skip_time=conf.GIVE_UP_KNOWN, _jitter = diagonal_distance(bounds.center, 50.0 if conf.ENCOUNTER else 65.0)):
+    async def try_point(self, point, spawn_time=None, spawn_id=None):
         try:
-            location = spawnid_to_loc(spawn_id)
-            location.jitter(*_jitter)
-            worker = await self.best_worker(location, monotonic() + skip_time)
+            point = randomize_point(point)
+            skip_time = monotonic() + (conf.GIVE_UP_KNOWN if spawn_time else conf.GIVE_UP_UNKNOWN)
+            worker = await self.best_worker(point, skip_time)
             if not worker:
                 if spawn_time:
                     self.skipped += 1
@@ -533,36 +512,34 @@ class Overseer:
                 if spawn_time:
                     worker.after_spawn = time() - spawn_time
 
-                if await worker.visit_point(location, spawn_id):
+                if await worker.visit(point, spawn_id):
                     self.visits += 1
         except CancelledError:
             raise
         except Exception:
-            self.log.exception('An exception occurred in try_spawn')
+            self.log.exception('An exception occurred in try_point')
         finally:
             self.coroutine_semaphore.release()
 
-    async def best_worker(self, location, skip_time, _enough=GOOD_ENOUGH, _limit=SPEED_LIMIT):
+    async def best_worker(self, point, skip_time):
+        good_enough = conf.GOOD_ENOUGH
         while self.running:
             gen = (w for w in self.workers if not w.busy.locked())
             try:
                 worker = next(gen)
-                current_time = time()
-                lowest_speed = worker.location.speed_with_time(location, current_time)
+                lowest_speed = worker.travel_speed(point)
             except StopIteration:
-                pass
-            else:
-                for w in gen:
-                    speed = w.location.speed_with_time(location, current_time)
-                    if speed < lowest_speed:
-                        if speed <= _enough:
-                            w.speed = speed
-                            return w
-                        lowest_speed = speed
-                        worker = w
-                if lowest_speed <= _limit:
-                    worker.speed = lowest_speed
-                    return worker
+                lowest_speed = float('inf')
+            for w in gen:
+                speed = w.travel_speed(point)
+                if speed < lowest_speed:
+                    lowest_speed = speed
+                    worker = w
+                    if speed < good_enough:
+                        break
+            if lowest_speed < conf.SPEED_LIMIT:
+                worker.speed = lowest_speed
+                return worker
             if skip_time and monotonic() > skip_time:
                 return None
             await sleep(conf.SEARCH_SLEEP, loop=LOOP)
@@ -570,4 +547,5 @@ class Overseer:
     def refresh_dict(self):
         while not self.extra_queue.empty():
             account = self.extra_queue.get()
-            ACCOUNTS[account['username']] = account
+            username = account['username']
+            ACCOUNTS[username] = account

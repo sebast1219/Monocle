@@ -9,26 +9,39 @@ from distutils.version import StrictVersion
 from aiopogo import PGoApi, HashServer, json_loads, exceptions as ex
 from aiopogo.auth_ptc import AuthPtc
 from cyrandom import choice, randint, uniform
-from pogeo import Location
-from pogeo.utils import location_to_cellid, location_to_token
+from pogeo import get_distance
 
-from .altitudes import load_alts, set_altitude
 from .db import FORT_CACHE, MYSTERY_CACHE, SIGHTING_CACHE
-from .utils import load_pickle, get_device_info, get_start_coords
+from .utils import round_coords, load_pickle, get_device_info, get_start_coords, Units, randomize_point
 from .shared import get_logger, LOOP, SessionManager, run_threaded, ACCOUNTS
-from . import avatar, bounds, db_proc, spawns, sanitized as conf
+from . import altitudes, avatar, bounds, db_proc, spawns, sanitized as conf
 
 if conf.NOTIFY:
     from .notification import Notifier
 
 if conf.CACHE_CELLS:
-    from pogeo import CellCache
-    CELL_CACHE = load_pickle('cellcache') or CellCache()
-    get_cell_ids = CELL_CACHE.get_cell_ids
+    from array import typecodes
+    if 'Q' in typecodes:
+        from pogeo import get_cell_ids_compact as _pogeo_cell_ids
+    else:
+        from pogeo import get_cell_ids as _pogeo_cell_ids
 else:
-    from pogeo import get_cell_ids
+    from pogeo import get_cell_ids as _pogeo_cell_ids
 
-load_alts()
+
+_unit = getattr(Units, conf.SPEED_UNIT.lower())
+if conf.SPIN_POKESTOPS:
+    if _unit is Units.miles:
+        SPINNING_SPEED_LIMIT = 21
+        UNIT_STRING = "MPH"
+    elif _unit is Units.kilometers:
+        SPINNING_SPEED_LIMIT = 34
+        UNIT_STRING = "KMH"
+    elif _unit is Units.meters:
+        SPINNING_SPEED_LIMIT = 34000
+        UNIT_STRING = "m/h"
+UNIT = _unit.value
+del _unit
 
 
 class Worker:
@@ -36,8 +49,22 @@ class Worker:
 
     download_hash = ''
     scan_delay = conf.SCAN_DELAY if conf.SCAN_DELAY >= 10 else 10
-    seen = 0
-    captchas = 0
+    g = {'seen': 0, 'captchas': 0}
+
+    if conf.CACHE_CELLS:
+        cells = load_pickle('cells') or {}
+
+        @classmethod
+        def get_cell_ids(cls, point):
+            rounded = round_coords(point, 4)
+            try:
+                return cls.cells[rounded]
+            except KeyError:
+                cells = _pogeo_cell_ids(rounded)
+                cls.cells[rounded] = cells
+                return cells
+    else:
+        get_cell_ids = _pogeo_cell_ids
 
     login_semaphore = Semaphore(conf.SIMULTANEOUS_LOGINS, loop=LOOP)
     sim_semaphore = Semaphore(conf.SIMULTANEOUS_SIMULATION, loop=LOOP)
@@ -66,9 +93,10 @@ class Worker:
                 raise ValueError("You don't have enough accounts for the number of workers specified in GRID.") from e
         self.username = self.account['username']
         try:
-            self.location = self.account['loc']
-        except (KeyError, TypeError):
+            self.location = self.account['location'][:2]
+        except KeyError:
             self.location = get_start_coords(worker_no)
+        self.altitude = None
         # last time of any request
         self.last_request = self.account.get('time', 0)
         # last time of a request that requires user interaction in the game
@@ -99,14 +127,13 @@ class Worker:
         self.pokestops = conf.SPIN_POKESTOPS
         self.next_spin = 0
         self.handle = HandleStub()
-        self.start_time = monotonic()
 
     def initialize_api(self):
         device_info = get_device_info(self.account)
         self.empty_visits = 0
 
         self.api = PGoApi(device_info=device_info)
-        self.api.position = self.location
+        self.api.set_position(*self.location, self.altitude)
         if self.proxies:
             self.api.proxy = next(self.proxies)
         try:
@@ -158,7 +185,7 @@ class Worker:
             raise err
 
         self.error_code = '°'
-        version = 6304
+        version = 6301
         async with self.sim_semaphore:
             self.error_code = 'APP SIMULATION'
             if conf.APP_SIMULATION:
@@ -481,7 +508,7 @@ class Worker:
         for attempt in range(-1, conf.MAX_RETRIES):
             try:
                 responses = await request.call()
-                self.location.update_time()
+                self.last_request = time()
                 err = None
                 break
             except (ex.NotLoggedInException, ex.AuthException) as e:
@@ -525,7 +552,7 @@ class Worker:
             except ex.BadRPCException:
                 raise
             except ex.InvalidRPCException as e:
-                self.location.update_time()
+                self.last_request = time()
                 if not isinstance(e, type(err)):
                     err = e
                     self.log.warning('{}', e)
@@ -544,7 +571,7 @@ class Worker:
                         self.log.error('{}', e)
                     await sleep(5, loop=LOOP)
             except (ex.MalformedResponseException, ex.UnexpectedResponseException) as e:
-                self.location.update_time()
+                self.last_request = time()
                 if not isinstance(e, type(err)):
                     self.log.warning('{}', e)
                 self.error_code = 'MALFORMED RESPONSE'
@@ -554,7 +581,7 @@ class Worker:
 
         if action:
             # pad for time that action would require
-            self.last_action = self.location.time + action
+            self.last_action = self.last_request + action
 
         try:
             delta = responses['GET_INVENTORY'].inventory_delta
@@ -582,7 +609,7 @@ class Worker:
         try:
             challenge_url = responses['CHECK_CHALLENGE'].challenge_url
             if challenge_url != ' ':
-                Worker.captchas += 1
+                self.g['captchas'] += 1
                 if conf.CAPTCHA_KEY:
                     self.log.warning('{} has encountered a CAPTCHA, trying to solve', self.username)
                     await self.handle_captcha(challenge_url)
@@ -592,30 +619,43 @@ class Worker:
             pass
         return responses
 
+    def travel_speed(self, point):
+        '''Fast calculation of travel speed to point'''
+        time_diff = max(time() - self.last_request, self.scan_delay)
+        distance = get_distance(self.location, point, UNIT)
+        # conversion from seconds to hours
+        speed = (distance / time_diff) * 3600
+        return speed
+
     async def bootstrap_visit(self, point):
         for _ in range(3):
-            if await self.visit_point(point, bootstrap=True):
+            if await self.visit(point, bootstrap=True):
                 return True
             self.error_code = '∞'
-            self.location.jitter(0.00005, 0.00005, 0.5)
+            self.simulate_jitter(0.00005)
         return False
 
-    async def visit_point(self, point, spawn_id=None, bootstrap=False):
-        """Wrapper for visit that sets location and logs in if necessary
+    async def visit(self, point, spawn_id=None, bootstrap=False):
+        """Wrapper for self.visit_point - runs it a few times before giving up
+
+        Also is capable of restarting in case an error occurs.
         """
         try:
-            set_altitude(point)
+            try:
+                self.altitude = altitudes.get(point)
+            except KeyError:
+                self.altitude = await altitudes.fetch(point)
             self.location = point
-            self.api.position = self.location
+            self.api.set_position(*self.location, self.altitude)
             if not self.authenticated:
                 await self.login()
-            return await self.visit(spawn_id, bootstrap)
+            return await self.visit_point(point, spawn_id, bootstrap)
         except ex.NotLoggedInException:
             self.error_code = 'NOT AUTHENTICATED'
             await sleep(1, loop=LOOP)
             if not await self.login(reauth=True):
                 await self.swap_account(reason='reauth failed')
-            return await self.visit(spawn_id, bootstrap)
+            return await self.visit(point, spawn_id, bootstrap)
         except ex.AuthException as e:
             self.log.warning('Auth error on {}: {}', self.username, e)
             self.error_code = 'NOT AUTHENTICATED'
@@ -623,7 +663,7 @@ class Worker:
             await self.swap_account(reason='login failed')
         except CaptchaException:
             self.error_code = 'CAPTCHA'
-            Worker.captchas += 1
+            self.g['captchas'] += 1
             await sleep(1, loop=LOOP)
             await self.bench_account()
         except CaptchaSolveException:
@@ -679,7 +719,7 @@ class Worker:
             self.error_code = 'MALFORMED RESPONSE'
         except EmptyGMOException as e:
             self.error_code = '0'
-            self.log.warning('Empty GetMapObjects response for {}. Speed: {:.2f}m/s', self.username, self.speed)
+            self.log.warning('Empty GetMapObjects response for {}. Speed: {:.2f}', self.username, self.speed)
         except ex.HashServerException as e:
             self.log.warning('{}', e)
             self.error_code = 'HASHING ERROR'
@@ -693,34 +733,38 @@ class Worker:
             self.error_code = 'EXCEPTION'
         return False
 
-    async def visit(self, spawn_id, bootstrap,
-                    encounter_conf=conf.ENCOUNTER, notify_conf=conf.NOTIFY):
+    async def visit_point(self, point, spawn_id, bootstrap,
+            encounter_conf=conf.ENCOUNTER, notify_conf=conf.NOTIFY,
+            more_points=conf.MORE_POINTS):
         self.handle.cancel()
         self.error_code = '∞' if bootstrap else '!'
 
-        self.log.info('Visiting {0[0]:.4f}, {0[1]:.4f}', self.location)
+        self.log.info('Visiting {0[0]:.4f},{0[1]:.4f}', point)
+        start = time()
 
-        cell_ids = get_cell_ids(self.location)
+        cell_ids = self.get_cell_ids(point)
+        since_timestamp_ms = (0,) * len(cell_ids)
         request = self.api.create_request()
         request.get_map_objects(cell_id=cell_ids,
-                                since_timestamp_ms=(0,) * len(cell_ids),
-                                latitude=self.location[0],
-                                longitude=self.location[1])
+                                since_timestamp_ms=since_timestamp_ms,
+                                latitude=point[0],
+                                longitude=point[1])
 
         diff = self.last_gmo + self.scan_delay - time()
         if diff > 0:
             await sleep(diff, loop=LOOP)
         responses = await self.call(request)
-        self.last_gmo = self.location.time
+        self.last_gmo = self.last_request
 
         try:
             map_objects = responses['GET_MAP_OBJECTS']
 
             if map_objects.status != 1:
-                error = 'GetMapObjects code {} for {}. Speed: {:.2f}m/s'.format(map_objects.status, self.username, self.speed)
+                error = 'GetMapObjects code for {}. Speed: {:.2f}'.format(self.username, self.speed)
                 self.empty_visits += 1
                 if self.empty_visits > 3:
-                    await self.swap_account('{} empty visits'.format(self.empty_visits))
+                    reason = '{} empty visits'.format(self.empty_visits)
+                    await self.swap_account(reason)
                 raise ex.UnexpectedResponseException(error)
         except KeyError:
             await self.random_sleep(.5, 1)
@@ -729,6 +773,7 @@ class Worker:
 
         pokemon_seen = 0
         forts_seen = 0
+        points_seen = 0
         seen_target = not spawn_id
 
         if conf.ITEM_LIMITS and self.bag_items >= self.item_capacity:
@@ -779,7 +824,7 @@ class Worker:
                             db_proc.add(norm)
                     if (self.pokestops and
                             self.bag_items < self.item_capacity
-                            and monotonic() > self.next_spin
+                            and time() > self.next_spin
                             and (not conf.SMART_THROTTLE or
                             self.smart_throttle(2))):
                         cooldown = fort.cooldown_complete_timestamp_ms
@@ -790,6 +835,17 @@ class Worker:
                         db_proc.add(pokestop)
                 elif fort not in FORT_CACHE:
                     db_proc.add(self.normalize_gym(fort))
+
+            if more_points:
+                try:
+                    for p in map_cell.spawn_points:
+                        points_seen += 1
+                        p = p.latitude, p.longitude
+                        if spawns.have_point(p) or p not in bounds:
+                            continue
+                        spawns.cell_points.add(p)
+                except KeyError:
+                    pass
 
         if spawn_id:
             db_proc.add({
@@ -804,12 +860,12 @@ class Worker:
         if pokemon_seen > 0:
             self.error_code = ':'
             self.total_seen += pokemon_seen
-            Worker.seen += pokemon_seen
+            self.g['seen'] += pokemon_seen
             self.empty_visits = 0
         else:
             self.empty_visits += 1
             if forts_seen == 0:
-                self.log.warning('Nothing seen by {}. Speed: {:.2f}m/s', self.username, self.speed)
+                self.log.warning('Nothing seen by {}. Speed: {:.2f}', self.username, self.speed)
                 self.error_code = '0 SEEN'
             else:
                 self.error_code = ','
@@ -819,16 +875,18 @@ class Worker:
         self.visits += 1
 
         if conf.MAP_WORKERS:
-            self.worker_dict[self.worker_no] = (
-                self.location, self.location.time,self.speed, self.total_seen,
-                self.visits, pokemon_seen)
+            self.worker_dict.update([(self.worker_no,
+                (point, start, self.speed, self.total_seen,
+                self.visits, pokemon_seen))])
         self.log.info(
             'Point processed, {} Pokemon and {} forts seen!',
-            pokemon_seen, forts_seen)
+            pokemon_seen,
+            forts_seen,
+        )
 
         self.update_accounts_dict()
         self.handle = LOOP.call_later(60, self.unset_code)
-        return pokemon_seen + forts_seen
+        return pokemon_seen + forts_seen + points_seen
 
     def smart_throttle(self, requests=1):
         try:
@@ -844,30 +902,30 @@ class Worker:
 
     async def spin_pokestop(self, pokestop):
         self.error_code = '$'
-        pokestop_location = Location(pokestop.latitude, pokestop.longitude)
-        distance = self.location.distance(pokestop_location)
-        # permitted interaction distance - 2 (for some jitter/calculation leeway)
+        pokestop_location = pokestop.latitude, pokestop.longitude
+        distance = get_distance(self.location, pokestop_location)
+        # permitted interaction distance - 4 (for some jitter leeway)
         # estimation of spinning speed limit
-        if distance > 38.0 or self.speed > 8.611:
+        if distance > 36 or self.speed > SPINNING_SPEED_LIMIT:
             self.error_code = '!'
             return False
 
         # randomize location up to ~1.5 meters
-        self.location.jitter(0.00001, 0.00001, 0.25)
+        self.simulate_jitter(amount=0.00001)
 
         request = self.api.create_request()
-        request.fort_details(fort_id=pokestop.id,
-                             latitude=pokestop_location[0],
-                             longitude=pokestop_location[1])
+        request.fort_details(fort_id = pokestop.id,
+                             latitude = pokestop_location[0],
+                             longitude = pokestop_location[1])
         responses = await self.call(request, action=1.2)
         name = responses['FORT_DETAILS'].name
 
         request = self.api.create_request()
-        request.fort_search(fort_id=pokestop.id,
-                            player_latitude=self.location[0],
-                            player_longitude=self.location[1],
-                            fort_latitude=pokestop_location[0],
-                            fort_longitude=pokestop_location[1])
+        request.fort_search(fort_id = pokestop.id,
+                            player_latitude = self.location[0],
+                            player_longitude = self.location[1],
+                            fort_latitude = pokestop_location[0],
+                            fort_longitude = pokestop_location[1])
         responses = await self.call(request, action=2)
 
         try:
@@ -880,8 +938,8 @@ class Worker:
         if result == 1:
             self.log.info('Spun {}.', name)
         elif result == 2:
-            self.log.info('The server said {} was out of spinning range. {:.1f}m {:.1f}m/s',
-                name, distance, self.speed)
+            self.log.info('The server said {} was out of spinning range. {:.1f}m {:.1f}{}',
+                name, distance, self.speed, UNIT_STRING)
         elif result == 3:
             self.log.warning('{} was in the cooldown period.', name)
         elif result == 4:
@@ -894,22 +952,26 @@ class Worker:
         else:
             self.log.warning('Failed spinning {}: {}', name, result)
 
-        self.next_spin = monotonic() + conf.SPIN_COOLDOWN
+        self.next_spin = time() + conf.SPIN_COOLDOWN
         self.error_code = '!'
 
     async def encounter(self, pokemon, spawn_id):
-        distance_to_pokemon = self.location.distance(Location(pokemon['lat'], pokemon['lon']))
+        distance_to_pokemon = get_distance(self.location, (pokemon['lat'], pokemon['lon']))
 
         self.error_code = '~'
 
         if distance_to_pokemon > 48:
             percent = 1 - (47 / distance_to_pokemon)
-            self.location[0] -= (self.location[0] - pokemon['lat']) * percent
-            self.location[1] -= (self.location[1] - pokemon['lon']) * percent
-            self.jitter(0.000001, 0.000001, 1)
+            lat_change = (self.location[0] - pokemon['lat']) * percent
+            lon_change = (self.location[1] - pokemon['lon']) * percent
+            self.location = (
+                self.location[0] - lat_change,
+                self.location[1] - lon_change)
+            self.altitude = uniform(self.altitude - 2, self.altitude + 2)
+            self.api.set_position(*self.location, self.altitude)
             delay_required = min((distance_to_pokemon * percent) / 8, 1.1)
         else:
-            self.jitter(0.00001, 0.00001, .3)
+            self.simulate_jitter()
             delay_required = 1.1
 
         await self.random_sleep(delay_required, delay_required + 1.5)
@@ -941,12 +1003,12 @@ class Worker:
         rec_items = {}
         limits = conf.ITEM_LIMITS
         for item, count in self.items.items():
-            try:
+            if item in limits and count > limits[item]:
                 discard = count - limits[item]
-                if discard > 0:
-                    rec_items[item] = discard if discard <= 50 else randint(50, discard)
-            except KeyError:
-                pass
+                if discard > 50:
+                    rec_items[item] = randint(50, discard)
+                else:
+                    rec_items[item] = discard
 
         removed = 0
         for item, count in rec_items.items():
@@ -955,10 +1017,10 @@ class Worker:
             responses = await self.call(request, action=2)
 
             try:
-                if responses['RECYCLE_INVENTORY_ITEM'].result == 1:
-                    removed += count
+                if responses['RECYCLE_INVENTORY_ITEM'].result != 1:
+                    self.log.warning("Failed to remove item {}", item)
                 else:
-                    self.log.warning("Failed to remove item {}, code: {}", item, result)
+                    removed += count
             except KeyError:
                 self.log.warning("Failed to remove item {}", item)
         self.log.info("Removed {} items", removed)
@@ -1011,8 +1073,6 @@ class Worker:
             }
             async with session.post('http://2captcha.com/in.php', params=params) as resp:
                 response = await resp.json(loads=json_loads)
-        except KeyError:
-            self.log.error('Challenge URL not found in response.')
         except CancelledError:
             raise
         except Exception as e:
@@ -1061,8 +1121,14 @@ class Worker:
         self.update_accounts_dict()
         self.log.warning("Successfully solved CAPTCHA")
 
+    def simulate_jitter(self, amount=0.00002):
+        '''Slightly randomize location, by up to ~3 meters by default.'''
+        self.location = randomize_point(self.location)
+        self.altitude = uniform(self.altitude - 1, self.altitude + 1)
+        self.api.set_position(*self.location, self.altitude)
+
     def update_accounts_dict(self):
-        self.account['loc'] = self.location
+        self.account['location'] = self.location
         self.account['time'] = self.last_request
         self.account['inventory_timestamp'] = self.inventory_timestamp
         if self.player_level:
@@ -1123,12 +1189,14 @@ class Worker:
                 self.account = await run_threaded(self.extra_queue.get)
         self.username = self.account['username']
         try:
-            self.location = self.account['loc']
+            self.location = self.account['location'][:2]
         except KeyError:
             self.location = get_start_coords(self.worker_no)
         self.inventory_timestamp = self.account.get('inventory_timestamp', 0) if self.items else 0
         self.player_level = self.account.get('level')
-        self.last_action = self.last_gmo = self.location.time
+        self.last_request = self.account.get('time', 0)
+        self.last_action = self.last_request
+        self.last_gmo = self.last_request
         try:
             self.items = self.account['items']
             self.bag_items = sum(self.items.values())
@@ -1140,7 +1208,6 @@ class Worker:
         self.unused_incubators = deque()
         self.initialize_api()
         self.error_code = None
-        self.start_time = monotonic()
 
     def unset_code(self):
         self.error_code = None
@@ -1175,15 +1242,16 @@ class Worker:
         return norm
 
     @staticmethod
-    def normalize_lured(raw, now, sid=location_to_cellid if conf.SPAWN_ID_INT else location_to_token):
+    def normalize_lured(raw, now):
         lure = raw.lure_info
-        loc = Location(raw.latitude, raw.longitude)
         return {
             'type': 'pokemon',
             'encounter_id': lure.encounter_id,
             'pokemon_id': lure.active_pokemon_id,
             'expire_timestamp': lure.lure_expires_timestamp_ms // 1000,
-            'spawn_id': sid(loc, 25),
+            'lat': raw.latitude,
+            'lon': raw.longitude,
+            'spawn_id': 0 if conf.SPAWN_ID_INT else 'LURED',
             'time_till_hidden': (lure.lure_expires_timestamp_ms - now) / 1000,
             'inferred': 'pokestop'
         }
@@ -1214,6 +1282,10 @@ class Worker:
     async def random_sleep(minimum=10.1, maximum=14, loop=LOOP):
         """Sleeps for a bit"""
         await sleep(uniform(minimum, maximum), loop=loop)
+
+    @property
+    def start_time(self):
+        return self.api.start_time
 
     @property
     def status(self):

@@ -20,20 +20,21 @@ worker_count = config.GRID[0] * config.GRID[1]
 _valid_types = {
     'ACCOUNTS': set_sequence,
     'ACCOUNTS_CSV': path,
-    'ALT_LEVEL': int,
+    'ALT_PRECISION': int,
     'ALT_RANGE': sequence,
     'ALWAYS_NOTIFY': int,
     'ALWAYS_NOTIFY_IDS': set_sequence_range,
     'APP_SIMULATION': bool,
     'AREA_NAME': str,
     'AUTHKEY': bytes,
-    'BOOTSTRAP_LEVEL': int,
-    'BOUNDARIES': tuple,
+    'BOOTSTRAP_RADIUS': Number,
+    'BOUNDARIES': object,
     'CACHE_CELLS': bool,
     'CAPTCHAS_ALLOWED': int,
     'CAPTCHA_KEY': str,
     'COMPLETE_TUTORIAL': bool,
     'COROUTINES_LIMIT': int,
+    'DB': dict,
     'DB_ENGINE': str,
     'DIRECTORY': path,
     'DISCORD_INVITE_ID': str,
@@ -53,7 +54,6 @@ _valid_types = {
     'HASHTAGS': set_sequence,
     'HASH_KEY': (str,) + set_sequence,
     'HEATMAP': bool,
-    'HOLES': tuple,
     'IGNORE_IVS': bool,
     'IGNORE_RARITY': bool,
     'IMAGE_STATS': bool,
@@ -61,7 +61,7 @@ _valid_types = {
     'INITIAL_SCORE': Number,
     'ITEM_LIMITS': dict,
     'IV_FONT': str,
-    'LANDMARKS': sequence,
+    'LANDMARKS': object,
     'LANGUAGE': str,
     'LAST_MIGRATION': Number,
     'LOAD_CUSTOM_CSS_FILE': bool,
@@ -79,12 +79,12 @@ _valid_types = {
     'MAX_RETRIES': int,
     'MINIMUM_RUNTIME': Number,
     'MINIMUM_SCORE': Number,
+    'MORE_POINTS': bool,
     'MOVE_FONT': str,
-    'MULTI_BOUNDARIES': tuple,
     'NAME_FONT': str,
     'NEVER_NOTIFY_IDS': set_sequence_range,
     'NOTIFY': bool,
-    'NOTIFY_IDS': sequence,
+    'NOTIFY_IDS': set_sequence_range,
     'NOTIFY_RANKING': int,
     'PASS': str,
     'PB_API_KEY': str,
@@ -92,7 +92,6 @@ _valid_types = {
     'PLAYER_LOCALE': dict,
     'PROVIDER': str,
     'PROXIES': set_sequence,
-    'QUERY_SUFFIX': str,
     'RARE_IDS': set_sequence_range,
     'RARITY_OVERRIDE': dict,
     'REFRESH_RATE': Number,
@@ -133,14 +132,14 @@ _valid_types = {
 _defaults = {
     'ACCOUNTS': None,
     'ACCOUNTS_CSV': None,
-    'ALT_LEVEL': 13,
-    'ALT_RANGE': (390.0, 490.0),
+    'ALT_PRECISION': 2,
+    'ALT_RANGE': (300, 400),
     'ALWAYS_NOTIFY': 0,
-    'ALWAYS_NOTIFY_IDS': frozenset(),
+    'ALWAYS_NOTIFY_IDS': set(),
     'APP_SIMULATION': True,
     'AREA_NAME': 'Area',
     'AUTHKEY': b'm3wtw0',
-    'BOOTSTRAP_LEVEL': 16,
+    'BOOTSTRAP_RADIUS': 120,
     'BOUNDARIES': None,
     'CACHE_CELLS': False,
     'CAPTCHAS_ALLOWED': 3,
@@ -157,13 +156,12 @@ _defaults = {
     'FB_PAGE_ID': None,
     'FIXED_OPACITY': False,
     'FORCED_KILL': None,
-    'FULL_TIME': 1800.0,
-    'GIVE_UP_KNOWN': 75.0,
-    'GIVE_UP_UNKNOWN': 60.0,
-    'GOOD_ENOUGH': None,
+    'FULL_TIME': 1800,
+    'GIVE_UP_KNOWN': 75,
+    'GIVE_UP_UNKNOWN': 60,
+    'GOOD_ENOUGH': 0.1,
     'GOOGLE_MAPS_KEY': '',
     'HASHTAGS': None,
-    'HOLES': None,
     'IGNORE_IVS': False,
     'IGNORE_RARITY': False,
     'IMAGE_STATS': False,
@@ -185,11 +183,11 @@ _defaults = {
     'MAP_WORKERS': True,
     'MAX_CAPTCHAS': 0,
     'MAX_RETRIES': 3,
-    'MINIMUM_RUNTIME': 10.0,
+    'MINIMUM_RUNTIME': 10,
+    'MORE_POINTS': False,
     'MOVE_FONT': 'sans-serif',
-    'MULTI_BOUNDARIES': None,
     'NAME_FONT': 'sans-serif',
-    'NEVER_NOTIFY_IDS': frozenset(),
+    'NEVER_NOTIFY_IDS': (),
     'NOTIFY': False,
     'NOTIFY_IDS': None,
     'NOTIFY_RANKING': None,
@@ -199,33 +197,32 @@ _defaults = {
     'PLAYER_LOCALE': {'country': 'US', 'language': 'en', 'timezone': 'America/Denver'},
     'PROVIDER': None,
     'PROXIES': None,
-    'RARE_IDS': frozenset(),
+    'RARE_IDS': (),
     'RARITY_OVERRIDE': {},
-    'QUERY_SUFFIX': None,
     'REFRESH_RATE': 0.6,
     'REPORT_MAPS': True,
     'REPORT_SINCE': None,
-    'RESCAN_UNKNOWN': 90.0,
+    'RESCAN_UNKNOWN': 90,
     'SCAN_DELAY': 10,
     'SEARCH_SLEEP': 2.5,
     'SHOW_TIMER': False,
     'SIMULTANEOUS_LOGINS': 2,
     'SIMULTANEOUS_SIMULATION': 4,
-    'SKIP_SPAWN': 90.0,
+    'SKIP_SPAWN': 90,
     'SMART_THROTTLE': False,
     'SPAWN_ID_INT': True,
-    'SPEED_LIMIT': None,
+    'SPEED_LIMIT': 19.5,
     'SPEED_UNIT': 'miles',
-    'SPIN_COOLDOWN': 300.0,
+    'SPIN_COOLDOWN': 300,
     'SPIN_POKESTOPS': True,
-    'STAT_REFRESH': 5.0,
+    'STAT_REFRESH': 5,
     'STAY_WITHIN_MAP': True,
     'SWAP_OLDEST': 21600 / worker_count,
     'TELEGRAM_BOT_TOKEN': None,
     'TELEGRAM_CHAT_ID': None,
     'TELEGRAM_USERNAME': None,
-    'TIME_REQUIRED': 600.0,
-    'TRASH_IDS': frozenset(),
+    'TIME_REQUIRED': 300,
+    'TRASH_IDS': (),
     'TWEET_IMAGES': False,
     'TWITTER_ACCESS_KEY': None,
     'TWITTER_ACCESS_SECRET': None,
@@ -237,50 +234,23 @@ _defaults = {
     'WEBHOOKS': None
 }
 
-_cast = {
-    'ALWAYS_NOTIFY_IDS': set,
-    'ENCOUNTER_IDS': set,
-    'FULL_TIME': float,
-    'GIVE_UP_KNOWN': float,
-    'GIVE_UP_UNKNOWN': float,
-    'GOOD_ENOUGH': float,
-    'INITIAL_SCORE': float,
-    'LOGIN_TIMEOUT': float,
-    'MAP_FILTER_IDS': tuple,
-    'MINIMUM_RUNTIME': float,
-    'MINIMUM_SCORE': float,
-    'NEVER_NOTIFY_IDS': set,
-    'RARE_IDS': set,
-    'REFRESH_RATE': float,
-    'SCAN_DELAY': float,
-    'SEARCH_SLEEP': float,
-    'SKIP_SPAWN': float,
-    'SMART_THROTTLE': float,
-    'SPEED_LIMIT': float,
-    'SPIN_COOLDOWN': float,
-    'STAT_REFRESH': float,
-    'SWAP_OLDEST': float,
-    'TIME_REQUIRED': float,
-    'TRASH_IDS': set
-}
-
 
 class Config:
     __spec__ = __spec__
     __slots__ = tuple(_valid_types.keys()) + ('log',)
 
-    def __init__(self, valid_types=_valid_types, defaults=_defaults, cast=_cast):
+    def __init__(self):
         self.log = getLogger('sanitizer')
         for key, value in (x for x in vars(config).items() if x[0].isupper()):
             try:
-                if isinstance(value, valid_types[key]):
-                    setattr(self, key, value if key not in cast else cast[key](value))
-                    if key in defaults:
-                        del defaults[key]
-                elif key in defaults and value is defaults[key]:
-                    setattr(self, key, defaults.pop(key))
+                if isinstance(value, _valid_types[key]):
+                    setattr(self, key, value)
+                    if key in _defaults:
+                        del _defaults[key]
+                elif key in _defaults and value is _defaults[key]:
+                    setattr(self, key, _defaults.pop(key))
                 else:
-                    valid = valid_types[key]
+                    valid = _valid_types[key]
                     actual = type(value).__name__
                     if isinstance(valid, type):
                         err = '{} must be {}. Yours is: {}.'.format(
@@ -307,4 +277,4 @@ class Config:
 
 sys.modules[__name__] = Config()
 
-del _cast, _valid_types, config
+del _valid_types, config
