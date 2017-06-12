@@ -157,7 +157,7 @@ class Worker:
 
         for attempt in range(-1, conf.MAX_RETRIES):
             try:
-                self.error_code = '»'
+                self.error_code = '_'
                 async with self.login_semaphore:
                     self.error_code = 'LOGIN'
                     await self.api.set_authentication(
@@ -184,8 +184,8 @@ class Worker:
         if err:
             raise err
 
-        self.error_code = '°'
-        version = 6301
+        self.error_code = '-'
+        version = 6304
         async with self.sim_semaphore:
             self.error_code = 'APP SIMULATION'
             if conf.APP_SIMULATION:
@@ -631,7 +631,7 @@ class Worker:
         for _ in range(3):
             if await self.visit(point, bootstrap=True):
                 return True
-            self.error_code = '∞'
+            self.error_code = '?'
             self.simulate_jitter(0.00005)
         return False
 
@@ -737,7 +737,7 @@ class Worker:
             encounter_conf=conf.ENCOUNTER, notify_conf=conf.NOTIFY,
             more_points=conf.MORE_POINTS):
         self.handle.cancel()
-        self.error_code = '∞' if bootstrap else '!'
+        self.error_code = '?' if bootstrap else '!'
 
         self.log.info('Visiting {0[0]:.4f},{0[1]:.4f}', point)
         start = time()
@@ -789,9 +789,10 @@ class Worker:
 
                 if (normalized not in SIGHTING_CACHE and
                         normalized not in MYSTERY_CACHE):
-                    if (encounter_conf == 'all'
-                            or (encounter_conf == 'some'
-                            and normalized['pokemon_id'] in conf.ENCOUNTER_IDS)):
+                    # if (encounter_conf == 'all'
+                            # or (encounter_conf == 'some'
+                            # and normalized['pokemon_id'] in conf.ENCOUNTER_IDS)):
+                    if self.player_level != None and self.player_level >= 30:
                         try:
                             await self.encounter(normalized, pokemon.spawn_point_id)
                         except CancelledError:
