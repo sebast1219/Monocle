@@ -793,3 +793,33 @@ def get_all_spawn_coords(session, pokemon_id=None):
     if conf.REPORT_SINCE:
         points = points.filter(Sighting.expire_timestamp > SINCE_TIME)
     return points.all()
+
+def has_lure_to_add(session, pokestop_id):
+    query = session.execute('''
+        SELECT
+            pokestops.id,
+            pokestops.lat,
+            pokestops.lon
+        FROM lureToAdd
+        INNER JOIN pokestops ON lureToAdd.pokestop_id = pokestops.id
+        WHERE pokestops.external_id = '{pokestop_id}'
+    '''.format(
+       pokestop_id=pokestop_id,
+    ))
+    log.warning('{} lure asked on {}.', query.rowcount, pokestop_id)
+    if query.rowcount == 0:
+        return False
+    else:
+        return True
+		
+def del_lure_to_add(session, pokestop_id):
+    query = session.execute('''
+        DELETE lureToAdd
+        FROM lureToAdd
+        INNER JOIN pokestops ON lureToAdd.pokestop_id = pokestops.id
+        WHERE pokestops.external_id = '{pokestop_id}'
+    '''.format(
+       pokestop_id=pokestop_id,
+    ))
+    session.commit()
+    log.warning('Deleting lure demand {}.', pokestop_id)
