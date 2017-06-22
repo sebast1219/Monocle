@@ -231,7 +231,8 @@ _defaults = {
     'TWITTER_SCREEN_NAME': None,
     'TZ_OFFSET': None,
     'UVLOOP': True,
-    'WEBHOOKS': None
+    'WEBHOOKS': None,
+    'LURE_ON_DEMAND': False
 }
 
 
