@@ -184,8 +184,8 @@ class Worker:
         if err:
             raise err
 
+        version = 6701
         self.error_code = '-'
-        version = 6304
         async with self.sim_semaphore:
             self.error_code = 'APP SIMULATION'
             if conf.APP_SIMULATION:
@@ -221,7 +221,7 @@ class Worker:
     async def download_remote_config(self, version):
         request = self.api.create_request()
         request.download_remote_config_version(platform=1, app_version=version)
-        responses = await self.call(request, stamp=False, buddy=False, settings=True, dl_hash=False)
+        responses = await self.call(request, stamp=False, buddy=False, settings=True, inbox=False, dl_hash=False)
 
         try:
             inventory_items = responses['GET_INVENTORY'].inventory_delta.inventory_items
@@ -353,7 +353,7 @@ class Worker:
             # request 5: get_player_profile
             request = self.api.create_request()
             request.get_player_profile()
-            await self.call(request, settings=True)
+            await self.call(request, settings=True, inbox=False)
             await self.random_sleep(.2, .3)
 
             if self.player_level:
@@ -364,11 +364,6 @@ class Worker:
                 await self.random_sleep(.45, .7)
             else:
                 self.log.warning('No player level')
-
-            # request 7: register_background_device
-            request = self.api.create_request()
-            request.register_background_device(device_type='apple_watch')
-            await self.call(request, action=0.1)
 
             self.log.info('Finished RPC login sequence (iOS app simulation)')
             await self.random_sleep(.5, 1.3)
@@ -481,7 +476,7 @@ class Worker:
                         else:
                             self.unused_incubators.appendleft(item)
 
-    async def call(self, request, chain=True, stamp=True, buddy=True, settings=False, dl_hash=True, action=None):
+    async def call(self, request, chain=True, stamp=True, buddy=True, settings=False, inbox=True, dl_hash=True, action=None):
         if chain:
             request.check_challenge()
             request.get_hatched_eggs()
@@ -494,6 +489,8 @@ class Worker:
                     request.download_settings()
             if buddy:
                 request.get_buddy_walked()
+            if inbox:
+                request.get_inbox(is_history=True)
 
         if action:
             now = time()
@@ -599,9 +596,9 @@ class Worker:
             else:
                 if (not dl_hash
                         and conf.FORCED_KILL
-                        and dl_settings.settings.minimum_client_version != '0.63.1'):
+                        and dl_settings.settings.minimum_client_version != '0.67.1'):
                     forced_version = StrictVersion(dl_settings.settings.minimum_client_version)
-                    if forced_version > StrictVersion('0.63.4'):
+                    if forced_version > StrictVersion('0.67.1'):
                         err = '{} is being forced, exiting.'.format(forced_version)
                         self.log.error(err)
                         print(err)
