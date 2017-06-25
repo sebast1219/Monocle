@@ -11,7 +11,7 @@ from aiopogo.auth_ptc import AuthPtc
 from cyrandom import choice, randint, uniform
 from pogeo import get_distance
 
-from .db import FORT_CACHE, MYSTERY_CACHE, SIGHTING_CACHE
+from .db import FORT_CACHE, RAID_CACHE, MYSTERY_CACHE, SIGHTING_CACHE
 from .utils import round_coords, load_pickle, get_device_info, get_start_coords, Units, randomize_point
 from .shared import get_logger, LOOP, SessionManager, run_threaded, ACCOUNTS
 from . import altitudes, avatar, bounds, db_proc, spawns, sanitized as conf
@@ -833,8 +833,29 @@ class Worker:
                     if fort.id not in FORT_CACHE.pokestops:
                         pokestop = self.normalize_pokestop(fort)
                         db_proc.add(pokestop)
-                elif fort not in FORT_CACHE:
-                    db_proc.add(self.normalize_gym(fort))
+                else:
+                    if fort not in FORT_CACHE:
+                        db_proc.add(self.normalize_gym(fort))
+                    if fort.HasField('raid_info'):
+                        fort_raid = {}
+                        fort_raid['external_id'] = fort.id
+                        fort_raid['raid_battle_ms'] = fort.raid_info.raid_battle_ms
+                        fort_raid['raid_spawn_ms'] = fort.raid_info.raid_spawn_ms
+                        fort_raid['raid_end_ms'] = fort.raid_info.raid_end_ms
+                        fort_raid['raid_level'] = fort.raid_info.raid_level
+                        fort_raid['complete'] = fort.raid_info.complete
+                        fort_raid['pokemon_id'] = ""
+                        fort_raid['cp'] = ""
+                        fort_raid['move_1'] = ""
+                        fort_raid['move_2'] = ""
+                        if fort.raid_info.HasField('raid_pokemon'):
+                            fort_raid['pokemon_id'] = fort.raid_info.raid_pokemon.pokemon_id
+                            fort_raid['cp'] = fort.raid_info.raid_pokemon.cp
+                            fort_raid['move_1'] = fort.raid_info.raid_pokemon.move_1
+                            fort_raid['move_2'] = fort.raid_info.raid_pokemon.move_2
+				    	
+                        if fort_raid not in RAID_CACHE:
+                            db_proc.add(self.normalize_raid(fort_raid))
 
             if more_points:
                 try:
@@ -1294,6 +1315,23 @@ class Worker:
             'prestige': raw.gym_points,
             'guard_pokemon_id': raw.guard_pokemon_id,
             'last_modified': raw.last_modified_timestamp_ms // 1000,
+        }
+
+    @staticmethod
+    def normalize_raid(raw):
+        return {
+            'type': 'raid',
+            'external_id': raw['external_id'],
+            'raid_battle_ms': raw['raid_battle_ms'] // 1000,
+            'raid_spawn_ms': raw['raid_spawn_ms'] // 1000,
+            'raid_end_ms': raw['raid_end_ms'] // 1000,
+            'raid_level': raw['raid_level'],
+            'complete': raw['complete'],
+            'pokemon_id': raw['pokemon_id'],
+            'cp': raw['cp'],
+            'move_1': raw['move_1'],
+            'move_2': raw['move_2'],
+            # 'last_modified': raw.last_modified_timestamp_ms // 1000,
         }
 
     @staticmethod
