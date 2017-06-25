@@ -928,8 +928,7 @@ def update_raid(session, fort_id, raw):
 			pokemon_id = '{pokemon_id}',
 			cp = '{cp}',
 			move_1 = '{move_1}',
-			move_2 = '{move_2}',
-			notifDiscord = NULL
+			move_2 = '{move_2}'
 		WHERE
 			fort_id = {fort_id}
 			AND raid_spawn_ms = {raid_spawn_ms}
