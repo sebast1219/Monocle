@@ -126,7 +126,8 @@ _valid_types = {
     'TWITTER_SCREEN_NAME': str,
     'TZ_OFFSET': Number,
     'UVLOOP': bool,
-    'WEBHOOKS': set_sequence
+    'WEBHOOKS': set_sequence,
+	'LURE_ON_DEMAND': bool
 }
 
 _defaults = {
@@ -231,7 +232,8 @@ _defaults = {
     'TWITTER_SCREEN_NAME': None,
     'TZ_OFFSET': None,
     'UVLOOP': True,
-    'WEBHOOKS': None
+    'WEBHOOKS': None,
+    'LURE_ON_DEMAND': False
 }
 
 
