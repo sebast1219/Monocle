@@ -786,10 +786,9 @@ class Worker:
 
                 if (normalized not in SIGHTING_CACHE and
                         normalized not in MYSTERY_CACHE):
-                    # if (encounter_conf == 'all'
-                            # or (encounter_conf == 'some'
-                            # and normalized['pokemon_id'] in conf.ENCOUNTER_IDS)):
-                    if self.player_level != None and self.player_level >= 30:
+                    if (encounter_conf == 'all'
+                            or (encounter_conf == 'some'
+                            and normalized['pokemon_id'] in conf.ENCOUNTER_IDS)):
                         try:
                             await self.encounter(normalized, pokemon.spawn_point_id)
                         except CancelledError:
@@ -820,8 +819,6 @@ class Worker:
                         pokemon_seen += 1
                         if norm not in SIGHTING_CACHE:
                             db_proc.add(norm)
-                    elif conf.LURE_ON_DEMAND:
-                        await self.add_lure_pokestop(fort)
                     if (self.pokestops and
                             self.bag_items < self.item_capacity
                             and time() > self.next_spin
@@ -920,32 +917,6 @@ class Worker:
             return hashes_left > usable_per_second * seconds_left + spare
         except (TypeError, KeyError):
             return False
-
-    async def add_lure_pokestop(self, pokestop):
-        self.error_code = '$'
-        pokestop_location = pokestop.latitude, pokestop.longitude
-        distance = get_distance(self.location, pokestop_location)
-        # permitted interaction distance - 4 (for some jitter leeway)
-        # estimation of spinning speed limit
-        if distance > 36 or self.speed > SPINNING_SPEED_LIMIT:
-            self.error_code = '!'
-            return False
-
-        # randomize location up to ~1.5 meters
-        self.simulate_jitter(amount=0.00001)
-        session = SessionManager.get()
-        if db_proc.lure_to_add(pokestop.id):
-            db_proc.del_lure_to_add(pokestop.id)
-            request = self.api.create_request()
-            self.log.warning('Request add_fort_modifier ITEM_TROY_DISK {} {} {}', pokestop.id, pokestop_location[0], pokestop_location[1])
-            request.add_fort_modifier(
-                # modifier_type = ITEM_TROY_DISK,
-                modifier_type = 501,
-                fort_id = pokestop.id,
-                player_latitude = self.location[0],
-                player_longitude = self.location[1],
-            )
-            responses = await self.call(request, action=1.1)
 
     async def spin_pokestop(self, pokestop):
         self.error_code = '$'
