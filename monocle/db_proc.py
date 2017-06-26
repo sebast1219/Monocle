@@ -28,14 +28,6 @@ class DatabaseProcessor(Thread):
     def add(self, obj):
         self.queue.put(obj)
 
-    def lure_to_add(self, pokestop_id):
-        session = db.Session()
-        return db.has_lure_to_add(session, pokestop_id)
-
-    def del_lure_to_add(self, pokestop_id):
-        session = db.Session()
-        db.del_lure_to_add(session, pokestop_id)
-
     def run(self):
         session = db.Session()
         LOOP.call_soon_threadsafe(self.commit)
