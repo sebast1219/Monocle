@@ -26,7 +26,7 @@ class DatabaseProcessor(Thread):
         self.queue.put({'type': False})
 
     def add(self, obj):
-        self.queue.put(obj) 
+        self.queue.put(obj)
 
     def run(self):
         session = db.Session()
