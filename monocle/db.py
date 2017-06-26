@@ -552,10 +552,10 @@ def add_fort_sighting(session, raw_fort):
         fort=fort,
         team=raw_fort['team'],
         guard_pokemon_id=raw_fort['guard_pokemon_id'],
+        last_modified=raw_fort['last_modified'],
         in_battle=raw_fort['in_battle'],
         slots_available=raw_fort['slots_available'],
-        time_ocuppied=raw_fort['time_ocuppied'],
-        last_modified=raw_fort['last_modified'],
+        time_ocuppied=raw_fort['time_ocuppied']
     )
     session.add(obj)
     FORT_CACHE.add(raw_fort)
