@@ -841,10 +841,10 @@ class Worker:
                         fort_raid['raid_end_ms'] = fort.raid_info.raid_end_ms
                         fort_raid['raid_level'] = fort.raid_info.raid_level
                         fort_raid['complete'] = fort.raid_info.complete
-                        fort_raid['pokemon_id'] = ""
-                        fort_raid['cp'] = ""
-                        fort_raid['move_1'] = ""
-                        fort_raid['move_2'] = ""
+                        fort_raid['pokemon_id'] = None
+                        fort_raid['cp'] = None
+                        fort_raid['move_1'] = None
+                        fort_raid['move_2'] = None
                         if fort.raid_info.HasField('raid_pokemon'):
                             fort_raid['pokemon_id'] = fort.raid_info.raid_pokemon.pokemon_id
                             fort_raid['cp'] = fort.raid_info.raid_pokemon.cp
