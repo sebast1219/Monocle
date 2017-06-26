@@ -786,10 +786,10 @@ class Worker:
 
                 if (normalized not in SIGHTING_CACHE and
                         normalized not in MYSTERY_CACHE):
-                    if (encounter_conf == 'all'
+                    if ((encounter_conf == 'all'
                             or (encounter_conf == 'some'
                             and normalized['pokemon_id'] in conf.ENCOUNTER_IDS))
-                            and self.player_level != None and self.player_level >= 30:
+                        and self.player_level != None and self.player_level >= 30):
                         try:
                             await self.encounter(normalized, pokemon.spawn_point_id)
                         except CancelledError:
