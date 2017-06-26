@@ -191,11 +191,46 @@ class FortCache:
         except (FileNotFoundError, TypeError, KeyError):
             pass
 
+class RaidCache:
+    """Simple cache for storing fort sightings"""
+    def __init__(self):
+        self.raids = {}
+        self.class_version = 2
+        self.unpickle()
+
+    def __len__(self):
+        return len(self.raids)
+
+    def add(self, raid):
+        self.raids[raid['external_id']] = str(raid['raid_spawn_ms']) + str(raid['pokemon_id'])
+
+    def __contains__(self, raid):
+        try:
+            return self.raids[raid['external_id']] == str(raid['raid_spawn_ms']) + str(raid['pokemon_id'])
+        except KeyError:
+            return False
+
+    def pickle(self):
+        state = self.__dict__.copy()
+        state['db_hash'] = spawns.db_hash
+        state['bounds_hash'] = hash(bounds)
+        dump_pickle('raids', state)
+
+    def unpickle(self):
+        try:
+            state = load_pickle('raids', raise_exception=True)
+            if all((state['class_version'] == self.class_version,
+                    state['db_hash'] == spawns.db_hash,
+                    state['bounds_hash'] == hash(bounds))):
+                self.__dict__.update(state)
+        except (FileNotFoundError, TypeError, KeyError):
+            pass
 
 
 SIGHTING_CACHE = SightingCache()
 MYSTERY_CACHE = MysteryCache()
 FORT_CACHE = FortCache()
+RAID_CACHE = RaidCache()
 
 Base = declarative_base()
 
@@ -226,6 +261,7 @@ class Sighting(Base):
     sta_iv = Column(TINY_TYPE)
     move_1 = Column(SmallInteger)
     move_2 = Column(SmallInteger)
+    cp = Column(SmallInteger)
 
     __table_args__ = (
         UniqueConstraint(
@@ -254,6 +290,7 @@ class Mystery(Base):
     sta_iv = Column(TINY_TYPE)
     move_1 = Column(SmallInteger)
     move_2 = Column(SmallInteger)
+    cp = Column(SmallInteger)
 
     __table_args__ = (
         UniqueConstraint(
@@ -290,6 +327,12 @@ class Fort(Base):
         backref='fort',
         order_by='FortSighting.last_modified'
     )
+	
+    raids = relationship(
+        'RaidSighting',
+        backref='fort',
+        order_by='RaidSighting.raid_spawn_ms'
+    )
 
 
 class FortSighting(Base):
@@ -299,10 +342,8 @@ class FortSighting(Base):
     fort_id = Column(Integer, ForeignKey('forts.id'))
     last_modified = Column(Integer, index=True)
     team = Column(TINY_TYPE)
-    in_battle = Column(BOOLEAN, default=False)
+    prestige = Column(MEDIUM_TYPE)
     guard_pokemon_id = Column(TINY_TYPE)
-    slots_available = Column(TINY_TYPE)
-    time_ocuppied = Column(Integer)
 
     __table_args__ = (
         UniqueConstraint(
@@ -312,6 +353,28 @@ class FortSighting(Base):
         ),
     )
 
+
+class RaidSighting(Base):
+    __tablename__ = 'fort_raids'
+    id = Column(Integer, primary_key=True)
+    fort_id = Column(Integer, ForeignKey('forts.id'))
+    raid_battle_ms = Column(Integer, index=True)
+    raid_spawn_ms = Column(Integer, index=True)
+    raid_end_ms = Column(Integer, index=True)
+    raid_level = Column(Integer)
+    complete = Column(TINY_TYPE)
+    pokemon_id = Column(TINY_TYPE)
+    cp = Column(TINY_TYPE)
+    move_1 = Column(SmallInteger)
+    move_2 = Column(SmallInteger)
+
+    __table_args__ = (
+        UniqueConstraint(
+            'fort_id',
+            'raid_spawn_ms',
+            name='fort_id_raid_spawn_ms_unique'
+        ),
+    )
 
 class Pokestop(Base):
     __tablename__ = 'pokestops'
@@ -357,7 +420,8 @@ def add_sighting(session, pokemon):
         def_iv=pokemon.get('individual_defense'),
         sta_iv=pokemon.get('individual_stamina'),
         move_1=pokemon.get('move_1'),
-        move_2=pokemon.get('move_2')
+        move_2=pokemon.get('move_2'),
+        cp=pokemon.get('cp')
     )
     session.add(obj)
     SIGHTING_CACHE.add(pokemon)
@@ -456,7 +520,8 @@ def add_mystery(session, pokemon):
         def_iv=pokemon.get('individual_defense'),
         sta_iv=pokemon.get('individual_stamina'),
         move_1=pokemon.get('move_1'),
-        move_2=pokemon.get('move_2')
+        move_2=pokemon.get('move_2'),
+        cp=pokemon.get('cp')
     )
     session.add(obj)
     MYSTERY_CACHE.add(pokemon)
@@ -484,15 +549,47 @@ def add_fort_sighting(session, raw_fort):
     obj = FortSighting(
         fort=fort,
         team=raw_fort['team'],
+        prestige=raw_fort['prestige'],
         guard_pokemon_id=raw_fort['guard_pokemon_id'],
         last_modified=raw_fort['last_modified'],
-        in_battle=raw_fort['in_battle'],
-        slots_available=raw_fort['slots_available'],
-        time_ocuppied=raw_fort['time_ocuppied']
     )
     session.add(obj)
     FORT_CACHE.add(raw_fort)
 
+def add_raid_sighting(session, raw_raid):
+    # Check if fort exists
+    fort = session.query(Fort) \
+        .filter(Fort.external_id == raw_raid['external_id']) \
+        .first()
+    if fort.id and session.query(exists().where(and_(
+                RaidSighting.fort_id == fort.id,
+                RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms'],
+                RaidSighting.pokemon_id != raw_raid['pokemon_id']
+            ))).scalar():
+        #Update pokemon_id etc.
+        update_raid(session,fort.id,raw_raid)
+    if fort.id and session.query(exists().where(and_(
+                RaidSighting.fort_id == fort.id,
+                RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']
+            ))).scalar():
+        # Why is it not in the cache? It should be there!
+        RAID_CACHE.add(raw_raid)
+        return
+    else:
+        obj = RaidSighting(
+            fort=fort,
+            raid_battle_ms=raw_raid['raid_battle_ms'],
+            raid_spawn_ms=raw_raid['raid_spawn_ms'],
+            raid_end_ms=raw_raid['raid_end_ms'],
+            raid_level=raw_raid['raid_level'],
+            complete=raw_raid['complete'],
+            pokemon_id=raw_raid['pokemon_id'],
+            cp=raw_raid['cp'],
+            move_1=raw_raid['move_1'],
+            move_2=raw_raid['move_2'],
+        )
+        session.add(obj)
+    RAID_CACHE.add(raw_raid)
 
 def add_pokestop(session, raw_pokestop):
     pokestop_id = raw_pokestop['external_id']
@@ -558,11 +655,9 @@ def _get_forts_sqlite(session):
             fs.fort_id,
             fs.id,
             fs.team,
+            fs.prestige,
             fs.guard_pokemon_id,
             fs.last_modified,
-            fs.in_battle,
-            fs.slots_available,
-            fs.time_ocuppied,
             f.lat,
             f.lon
         FROM fort_sightings fs
@@ -581,11 +676,9 @@ def _get_forts(session):
             fs.fort_id,
             fs.id,
             fs.team,
+            fs.prestige,
             fs.guard_pokemon_id,
             fs.last_modified,
-            fs.in_battle,
-            fs.slots_available,
-            fs.time_ocuppied,
             f.lat,
             f.lon
         FROM fort_sightings fs
@@ -798,3 +891,55 @@ def get_all_spawn_coords(session, pokemon_id=None):
     if conf.REPORT_SINCE:
         points = points.filter(Sighting.expire_timestamp > SINCE_TIME)
     return points.all()
+
+def has_lure_to_add(session, pokestop_id):
+    query = session.execute('''
+        SELECT
+            pokestops.id,
+            pokestops.lat,
+            pokestops.lon
+        FROM lureToAdd
+        INNER JOIN pokestops ON lureToAdd.pokestop_id = pokestops.id
+        WHERE pokestops.external_id = '{pokestop_id}'
+    '''.format(
+       pokestop_id=pokestop_id,
+    ))
+    if query.rowcount == 0:
+        return False
+    else:
+        return True
+		
+def del_lure_to_add(session, pokestop_id):
+    query = session.execute('''
+        DELETE lureToAdd
+        FROM lureToAdd
+        INNER JOIN pokestops ON lureToAdd.pokestop_id = pokestops.id
+        WHERE pokestops.external_id = '{pokestop_id}'
+    '''.format(
+       pokestop_id=pokestop_id,
+    ))
+    session.commit()
+    log.warning('Deleting lure demand {}.', pokestop_id)
+
+def update_raid(session, fort_id, raw):
+    query = session.execute('''
+        UPDATE fort_raids
+        SET
+			pokemon_id = '{pokemon_id}',
+			cp = '{cp}',
+			move_1 = '{move_1}',
+			move_2 = '{move_2}',
+			notifDiscord = NULL
+		WHERE
+			fort_id = {fort_id}
+			AND raid_spawn_ms = {raid_spawn_ms}
+			
+    '''.format(
+       fort_id=fort_id,
+       raid_spawn_ms=raw['raid_spawn_ms'],
+       pokemon_id=raw['pokemon_id'],
+       cp=raw['cp'],
+       move_1=raw['move_1'],
+       move_2=raw['move_2'],
+    ))
+    session.commit()
