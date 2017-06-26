@@ -342,8 +342,10 @@ class FortSighting(Base):
     fort_id = Column(Integer, ForeignKey('forts.id'))
     last_modified = Column(Integer, index=True)
     team = Column(TINY_TYPE)
-    prestige = Column(MEDIUM_TYPE)
+    in_battle = Column(BOOLEAN, default=False)
     guard_pokemon_id = Column(TINY_TYPE)
+    slots_available = Column(TINY_TYPE)
+    time_ocuppied = Column(Integer)
 
     __table_args__ = (
         UniqueConstraint(
@@ -549,8 +551,10 @@ def add_fort_sighting(session, raw_fort):
     obj = FortSighting(
         fort=fort,
         team=raw_fort['team'],
-        prestige=raw_fort['prestige'],
         guard_pokemon_id=raw_fort['guard_pokemon_id'],
+        in_battle=raw_fort['in_battle'],
+        slots_available=raw_fort['slots_available'],
+        time_ocuppied=raw_fort['time_ocuppied']
         last_modified=raw_fort['last_modified'],
     )
     session.add(obj)
@@ -655,9 +659,11 @@ def _get_forts_sqlite(session):
             fs.fort_id,
             fs.id,
             fs.team,
-            fs.prestige,
             fs.guard_pokemon_id,
             fs.last_modified,
+            fs.in_battle,
+            fs.slots_available,
+            fs.time_ocuppied,
             f.lat,
             f.lon
         FROM fort_sightings fs
@@ -676,9 +682,11 @@ def _get_forts(session):
             fs.fort_id,
             fs.id,
             fs.team,
-            fs.prestige,
             fs.guard_pokemon_id,
             fs.last_modified,
+            fs.in_battle,
+            fs.slots_available,
+            fs.time_ocuppied,
             f.lat,
             f.lon
         FROM fort_sightings fs
