@@ -1,0 +1,6 @@
+CREATE TABLE `lureToAdd` (
+  `idLureToAdd` int(11) NOT NULL AUTO_INCREMENT,
+  `pokestop_id` int(11) NOT NULL,
+  PRIMARY KEY (`idLureToAdd`),
+  UNIQUE KEY `pokestop_id` (`pokestop_id`)
+);
