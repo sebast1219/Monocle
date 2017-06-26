@@ -554,7 +554,7 @@ def add_fort_sighting(session, raw_fort):
         guard_pokemon_id=raw_fort['guard_pokemon_id'],
         in_battle=raw_fort['in_battle'],
         slots_available=raw_fort['slots_available'],
-        time_ocuppied=raw_fort['time_ocuppied']
+        time_ocuppied=raw_fort['time_ocuppied'],
         last_modified=raw_fort['last_modified'],
     )
     session.add(obj)
