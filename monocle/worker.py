@@ -1261,9 +1261,11 @@ class Worker:
             'lat': raw.latitude,
             'lon': raw.longitude,
             'team': raw.owned_by_team,
-            'prestige': raw.gym_points,
             'guard_pokemon_id': raw.guard_pokemon_id,
             'last_modified': raw.last_modified_timestamp_ms // 1000,
+            'in_battle': raw.in_battle,
+            'slots_available': raw.slots_available,
+            'time_ocuppied': raw.time_ocuppied,
         }
 
     @staticmethod
