@@ -11,7 +11,7 @@ from aiopogo.auth_ptc import AuthPtc
 from cyrandom import choice, randint, uniform
 from pogeo import get_distance
 
-from .db import FORT_CACHE, RAID_CACHE, MYSTERY_CACHE, SIGHTING_CACHE
+from .db import FORT_CACHE, MYSTERY_CACHE, SIGHTING_CACHE
 from .utils import round_coords, load_pickle, get_device_info, get_start_coords, Units, randomize_point
 from .shared import get_logger, LOOP, SessionManager, run_threaded, ACCOUNTS
 from . import altitudes, avatar, bounds, db_proc, spawns, sanitized as conf
@@ -157,7 +157,7 @@ class Worker:
 
         for attempt in range(-1, conf.MAX_RETRIES):
             try:
-                self.error_code = '_'
+                self.error_code = '»'
                 async with self.login_semaphore:
                     self.error_code = 'LOGIN'
                     await self.api.set_authentication(
@@ -184,8 +184,8 @@ class Worker:
         if err:
             raise err
 
+        self.error_code = '°'
         version = 6701
-        self.error_code = '-'
         async with self.sim_semaphore:
             self.error_code = 'APP SIMULATION'
             if conf.APP_SIMULATION:
@@ -628,7 +628,7 @@ class Worker:
         for _ in range(3):
             if await self.visit(point, bootstrap=True):
                 return True
-            self.error_code = '?'
+            self.error_code = '∞'
             self.simulate_jitter(0.00005)
         return False
 
@@ -734,7 +734,7 @@ class Worker:
             encounter_conf=conf.ENCOUNTER, notify_conf=conf.NOTIFY,
             more_points=conf.MORE_POINTS):
         self.handle.cancel()
-        self.error_code = '?' if bootstrap else '!'
+        self.error_code = '∞' if bootstrap else '!'
 
         self.log.info('Visiting {0[0]:.4f},{0[1]:.4f}', point)
         start = time()
@@ -786,10 +786,9 @@ class Worker:
 
                 if (normalized not in SIGHTING_CACHE and
                         normalized not in MYSTERY_CACHE):
-                    # if (encounter_conf == 'all'
-                            # or (encounter_conf == 'some'
-                            # and normalized['pokemon_id'] in conf.ENCOUNTER_IDS)):
-                    if self.player_level != None and self.player_level >= 30:
+                    if (encounter_conf == 'all'
+                            or (encounter_conf == 'some'
+                            and normalized['pokemon_id'] in conf.ENCOUNTER_IDS)):
                         try:
                             await self.encounter(normalized, pokemon.spawn_point_id)
                         except CancelledError:
@@ -820,8 +819,6 @@ class Worker:
                         pokemon_seen += 1
                         if norm not in SIGHTING_CACHE:
                             db_proc.add(norm)
-                    elif conf.LURE_ON_DEMAND:
-                        await self.add_lure_pokestop(fort)
                     if (self.pokestops and
                             self.bag_items < self.item_capacity
                             and time() > self.next_spin
@@ -833,29 +830,8 @@ class Worker:
                     if fort.id not in FORT_CACHE.pokestops:
                         pokestop = self.normalize_pokestop(fort)
                         db_proc.add(pokestop)
-                else:
-                    if fort not in FORT_CACHE:
-                        db_proc.add(self.normalize_gym(fort))
-                    if fort.HasField('raid_info'):
-                        fort_raid = {}
-                        fort_raid['external_id'] = fort.id
-                        fort_raid['raid_battle_ms'] = fort.raid_info.raid_battle_ms
-                        fort_raid['raid_spawn_ms'] = fort.raid_info.raid_spawn_ms
-                        fort_raid['raid_end_ms'] = fort.raid_info.raid_end_ms
-                        fort_raid['raid_level'] = fort.raid_info.raid_level
-                        fort_raid['complete'] = fort.raid_info.complete
-                        fort_raid['pokemon_id'] = ""
-                        fort_raid['cp'] = ""
-                        fort_raid['move_1'] = ""
-                        fort_raid['move_2'] = ""
-                        if fort.raid_info.HasField('raid_pokemon'):
-                            fort_raid['pokemon_id'] = fort.raid_info.raid_pokemon.pokemon_id
-                            fort_raid['cp'] = fort.raid_info.raid_pokemon.cp
-                            fort_raid['move_1'] = fort.raid_info.raid_pokemon.move_1
-                            fort_raid['move_2'] = fort.raid_info.raid_pokemon.move_2
-				    	
-                        if fort_raid not in RAID_CACHE:
-                            db_proc.add(self.normalize_raid(fort_raid))
+                elif fort not in FORT_CACHE:
+                    db_proc.add(self.normalize_gym(fort))
 
             if more_points:
                 try:
@@ -920,32 +896,6 @@ class Worker:
             return hashes_left > usable_per_second * seconds_left + spare
         except (TypeError, KeyError):
             return False
-
-    async def add_lure_pokestop(self, pokestop):
-        self.error_code = '$'
-        pokestop_location = pokestop.latitude, pokestop.longitude
-        distance = get_distance(self.location, pokestop_location)
-        # permitted interaction distance - 4 (for some jitter leeway)
-        # estimation of spinning speed limit
-        if distance > 36 or self.speed > SPINNING_SPEED_LIMIT:
-            self.error_code = '!'
-            return False
-
-        # randomize location up to ~1.5 meters
-        self.simulate_jitter(amount=0.00001)
-        session = SessionManager.get()
-        if db_proc.lure_to_add(pokestop.id):
-            db_proc.del_lure_to_add(pokestop.id)
-            request = self.api.create_request()
-            self.log.warning('Request add_fort_modifier ITEM_TROY_DISK {} {} {}', pokestop.id, pokestop_location[0], pokestop_location[1])
-            request.add_fort_modifier(
-                # modifier_type = ITEM_TROY_DISK,
-                modifier_type = 501,
-                fort_id = pokestop.id,
-                player_latitude = self.location[0],
-                player_longitude = self.location[1],
-            )
-            responses = await self.call(request, action=1.1)
 
     async def spin_pokestop(self, pokestop):
         self.error_code = '$'
@@ -1040,7 +990,6 @@ class Worker:
             pokemon['individual_stamina'] = pdata.individual_stamina
             pokemon['height'] = pdata.height_m
             pokemon['weight'] = pdata.weight_kg
-            pokemon['cp'] = pdata.cp
             pokemon['gender'] = pdata.pokemon_display.gender
         except KeyError:
             self.log.error('Missing encounter response.')
@@ -1315,23 +1264,6 @@ class Worker:
             'prestige': raw.gym_points,
             'guard_pokemon_id': raw.guard_pokemon_id,
             'last_modified': raw.last_modified_timestamp_ms // 1000,
-        }
-
-    @staticmethod
-    def normalize_raid(raw):
-        return {
-            'type': 'raid',
-            'external_id': raw['external_id'],
-            'raid_battle_ms': raw['raid_battle_ms'] // 1000,
-            'raid_spawn_ms': raw['raid_spawn_ms'] // 1000,
-            'raid_end_ms': raw['raid_end_ms'] // 1000,
-            'raid_level': raw['raid_level'],
-            'complete': raw['complete'],
-            'pokemon_id': raw['pokemon_id'],
-            'cp': raw['cp'],
-            'move_1': raw['move_1'],
-            'move_2': raw['move_2'],
-            # 'last_modified': raw.last_modified_timestamp_ms // 1000,
         }
 
     @staticmethod

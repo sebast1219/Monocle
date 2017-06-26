@@ -26,15 +26,7 @@ class DatabaseProcessor(Thread):
         self.queue.put({'type': False})
 
     def add(self, obj):
-        self.queue.put(obj) 
-
-    def lure_to_add(self, pokestop_id):
-        session = db.Session()
-        return db.has_lure_to_add(session, pokestop_id)
-
-    def del_lure_to_add(self, pokestop_id):
-        session = db.Session()
-        db.del_lure_to_add(session, pokestop_id)
+        self.queue.put(obj)
 
     def run(self):
         session = db.Session()
@@ -55,8 +47,6 @@ class DatabaseProcessor(Thread):
                     self.count += 1
                 elif item_type == 'fort':
                     db.add_fort_sighting(session, item)
-                elif item_type == 'raid':
-                    db.add_raid_sighting(session, item)
                 elif item_type == 'pokestop':
                     db.add_pokestop(session, item)
                 elif item_type == 'target':
