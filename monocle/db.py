@@ -360,7 +360,7 @@ class RaidSighting(Base):
     __tablename__ = 'fort_raids'
     id = Column(Integer, primary_key=True)
     fort_id = Column(Integer, ForeignKey('forts.id'))
-    raid_seed = Column(Integer)
+    raid_seed = Column(String(50))
     raid_battle_ms = Column(Integer, index=True)
     raid_spawn_ms = Column(Integer, index=True)
     raid_end_ms = Column(Integer, index=True)
