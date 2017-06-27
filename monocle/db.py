@@ -897,8 +897,7 @@ def update_raid(session, raw):
 			pokemon_id = '{pokemon_id}',
 			cp = '{cp}',
 			move_1 = '{move_1}',
-			move_2 = '{move_2}',
-			notifDiscord = NULL
+			move_2 = '{move_2}'
 		WHERE
 			raid_seed = {raid_seed}
 			AND raid_spawn_ms = {raid_spawn_ms}
