@@ -21,14 +21,14 @@ except AssertionError:
 log = get_logger(__name__)
 
 if conf.DB_ENGINE.startswith('mysql'):
-    from sqlalchemy.dialects.mysql import TINYINT, MEDIUMINT, BIGINT, DOUBLE, BOOLEAN
+    from sqlalchemy.dialects.mysql import TINYINT, MEDIUMINT, BIGINT, DOUBLE
 
     TINY_TYPE = TINYINT(unsigned=True)          # 0 to 255
     MEDIUM_TYPE = MEDIUMINT(unsigned=True)      # 0 to 4294967295
     HUGE_TYPE = BIGINT(unsigned=True)           # 0 to 18446744073709551615
     FLOAT_TYPE = DOUBLE(precision=17, scale=14, asdecimal=False)
 elif conf.DB_ENGINE.startswith('postgres'):
-    from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, BOOLEAN
+    from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 
     class NumInt(TypeDecorator):
         '''Modify Numeric type for integers'''
@@ -192,7 +192,7 @@ class FortCache:
             pass
 
 class RaidCache:
-    """Simple cache for storing fort sightings"""
+    """Simple cache for storing fort raids"""
     def __init__(self):
         self.raids = {}
         self.class_version = 2
@@ -202,11 +202,11 @@ class RaidCache:
         return len(self.raids)
 
     def add(self, raid):
-        self.raids[raid['external_id']] = str(raid['raid_spawn_ms']) + str(raid['pokemon_id'])
+        self.raids[raid['external_id']] = str(raid['raid_seed']) + str(raid.get('pokemon_id', 0))
 
     def __contains__(self, raid):
         try:
-            return self.raids[raid['external_id']] == str(raid['raid_spawn_ms']) + str(raid['pokemon_id'])
+            return self.raids[raid['external_id']] == str(raid['raid_seed']) + str(raid.get('pokemon_id', 0))
         except KeyError:
             return False
 
@@ -360,11 +360,12 @@ class RaidSighting(Base):
     __tablename__ = 'fort_raids'
     id = Column(Integer, primary_key=True)
     fort_id = Column(Integer, ForeignKey('forts.id'))
+    raid_seed = Column(Integer)
     raid_battle_ms = Column(Integer, index=True)
     raid_spawn_ms = Column(Integer, index=True)
     raid_end_ms = Column(Integer, index=True)
     raid_level = Column(Integer)
-    complete = Column(TINY_TYPE)
+    is_in_battle = Column(TINY_TYPE, default=0) 
     pokemon_id = Column(TINY_TYPE)
     cp = Column(Integer)
     move_1 = Column(SmallInteger)
@@ -561,17 +562,17 @@ def add_fort_sighting(session, raw_fort):
     FORT_CACHE.add(raw_fort)
 
 def add_raid_sighting(session, raw_raid):
-    # Check if fort exists
+    # Check if raid exists
     fort = session.query(Fort) \
         .filter(Fort.external_id == raw_raid['external_id']) \
         .first()
-    if fort.id and session.query(exists().where(and_(
-                RaidSighting.fort_id == fort.id,
-                RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms'],
-                RaidSighting.pokemon_id != raw_raid['pokemon_id']
-            ))).scalar():
-        #Update pokemon_id etc.
-        update_raid(session,fort.id,raw_raid)
+    raid = session.query(RaidSighting) \
+        .filter(RaidSighting.raid_seed == raw_raid['raid_seed']) \
+        .filter(RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']) \
+        .first()
+
+    if raid and raid.pokemon_id == None and raw_raid['pokemon_id'] != None:
+        update_raid(session,raw_raid)
     if fort.id and session.query(exists().where(and_(
                 RaidSighting.fort_id == fort.id,
                 RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']
@@ -582,6 +583,7 @@ def add_raid_sighting(session, raw_raid):
     else:
         obj = RaidSighting(
             fort=fort,
+            raid_seed=raw_raid['raid_seed'],
             raid_battle_ms=raw_raid['raid_battle_ms'],
             raid_spawn_ms=raw_raid['raid_spawn_ms'],
             raid_end_ms=raw_raid['raid_end_ms'],
@@ -593,7 +595,7 @@ def add_raid_sighting(session, raw_raid):
             move_2=raw_raid['move_2'],
         )
         session.add(obj)
-    RAID_CACHE.add(raw_raid)
+        RAID_CACHE.add(raw_raid)
 
 def add_pokestop(session, raw_pokestop):
     pokestop_id = raw_pokestop['external_id']
@@ -927,9 +929,8 @@ def del_lure_to_add(session, pokestop_id):
        pokestop_id=pokestop_id,
     ))
     session.commit()
-    log.warning('Deleting lure demand {}.', pokestop_id)
 
-def update_raid(session, fort_id, raw):
+def update_raid(session, raw):
     query = session.execute('''
         UPDATE fort_raids
         SET
@@ -939,11 +940,11 @@ def update_raid(session, fort_id, raw):
 			move_2 = '{move_2}',
 			notifDiscord = NULL
 		WHERE
-			fort_id = {fort_id}
+			raid_seed = {raid_seed}
 			AND raid_spawn_ms = {raid_spawn_ms}
 			
     '''.format(
-       fort_id=fort_id,
+       raid_seed=raw['raid_seed'],
        raid_spawn_ms=raw['raid_spawn_ms'],
        pokemon_id=raw['pokemon_id'],
        cp=raw['cp'],

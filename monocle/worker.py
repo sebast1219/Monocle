@@ -850,6 +850,7 @@ class Worker:
                     if fort.HasField('raid_info'):
                         fort_raid = {}
                         fort_raid['external_id'] = fort.id
+                        fort_raid['raid_seed'] = fort.raid_info.raid_seed
                         fort_raid['raid_battle_ms'] = fort.raid_info.raid_battle_ms
                         fort_raid['raid_spawn_ms'] = fort.raid_info.raid_spawn_ms
                         fort_raid['raid_end_ms'] = fort.raid_info.raid_end_ms
@@ -864,9 +865,10 @@ class Worker:
                             fort_raid['cp'] = fort.raid_info.raid_pokemon.cp
                             fort_raid['move_1'] = fort.raid_info.raid_pokemon.move_1
                             fort_raid['move_2'] = fort.raid_info.raid_pokemon.move_2
-				    	
-                        if fort_raid not in RAID_CACHE:
-                            db_proc.add(self.normalize_raid(fort_raid))
+
+                        normalized_raid = self.normalize_raid(fort_raid)
+                        if normalized_raid not in RAID_CACHE:
+                            db_proc.add(normalized_raid)
 
             if more_points:
                 try:
@@ -1335,6 +1337,7 @@ class Worker:
         return {
             'type': 'raid',
             'external_id': raw['external_id'],
+            'raid_seed': raw['raid_seed'],
             'raid_battle_ms': raw['raid_battle_ms'] // 1000,
             'raid_spawn_ms': raw['raid_spawn_ms'] // 1000,
             'raid_end_ms': raw['raid_end_ms'] // 1000,
