@@ -558,13 +558,13 @@ def add_raid_sighting(session, raw_raid):
     fort = session.query(Fort) \
         .filter(Fort.external_id == raw_raid['external_id']) \
         .first()
-    if fort.id and session.query(exists().where(and_(
-                RaidSighting.fort_id == fort.id,
-                RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms'],
-                RaidSighting.pokemon_id != raw_raid['pokemon_id']
-            ))).scalar():
-        #Update pokemon_id etc.
-        update_raid(session,fort.id,raw_raid)
+    raid = session.query(RaidSighting) \
+        .filter(RaidSighting.raid_seed == raw_raid['raid_seed']) \
+        .filter(RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']) \
+        .first()
+
+    if raid and raid.pokemon_id == None and raw_raid['pokemon_id'] != None:
+        update_raid(session,raw_raid)
     if fort.id and session.query(exists().where(and_(
                 RaidSighting.fort_id == fort.id,
                 RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']
@@ -890,20 +890,21 @@ def get_all_spawn_coords(session, pokemon_id=None):
         points = points.filter(Sighting.expire_timestamp > SINCE_TIME)
     return points.all()
 
-def update_raid(session, fort_id, raw):
+def update_raid(session, raw):
     query = session.execute('''
         UPDATE fort_raids
         SET
 			pokemon_id = '{pokemon_id}',
 			cp = '{cp}',
 			move_1 = '{move_1}',
-			move_2 = '{move_2}'
+			move_2 = '{move_2}',
+			notifDiscord = NULL
 		WHERE
-			fort_id = {fort_id}
+			raid_seed = {raid_seed}
 			AND raid_spawn_ms = {raid_spawn_ms}
 			
     '''.format(
-       fort_id=fort_id,
+       raid_seed=raw['raid_seed'],
        raid_spawn_ms=raw['raid_spawn_ms'],
        pokemon_id=raw['pokemon_id'],
        cp=raw['cp'],
@@ -911,3 +912,4 @@ def update_raid(session, fort_id, raw):
        move_2=raw['move_2'],
     ))
     session.commit()
+
