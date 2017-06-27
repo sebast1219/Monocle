@@ -192,7 +192,7 @@ class FortCache:
             pass
 
 class RaidCache:
-    """Simple cache for storing fort sightings"""
+    """Simple cache for storing fort raids"""
     def __init__(self):
         self.raids = {}
         self.class_version = 2
@@ -202,11 +202,11 @@ class RaidCache:
         return len(self.raids)
 
     def add(self, raid):
-        self.raids[raid['external_id']] = str(raid['raid_spawn_ms']) + str(raid['pokemon_id'])
+        self.raids[raid['external_id']] = str(raid['raid_seed']) + str(raid.get('pokemon_id', 0))
 
     def __contains__(self, raid):
         try:
-            return self.raids[raid['external_id']] == str(raid['raid_spawn_ms']) + str(raid['pokemon_id'])
+            return self.raids[raid['external_id']] == str(raid['raid_seed']) + str(raid.get('pokemon_id', 0))
         except KeyError:
             return False
 
@@ -356,6 +356,7 @@ class RaidSighting(Base):
     __tablename__ = 'fort_raids'
     id = Column(Integer, primary_key=True)
     fort_id = Column(Integer, ForeignKey('forts.id'))
+    raid_seed = Column(HUGE_TYPE)
     raid_battle_ms = Column(Integer, index=True)
     raid_spawn_ms = Column(Integer, index=True)
     raid_end_ms = Column(Integer, index=True)
@@ -553,7 +554,7 @@ def add_fort_sighting(session, raw_fort):
     FORT_CACHE.add(raw_fort)
 
 def add_raid_sighting(session, raw_raid):
-    # Check if fort exists
+    # Check if raid exists
     fort = session.query(Fort) \
         .filter(Fort.external_id == raw_raid['external_id']) \
         .first()
@@ -574,6 +575,7 @@ def add_raid_sighting(session, raw_raid):
     else:
         obj = RaidSighting(
             fort=fort,
+            raid_seed=raw_raid['raid_seed'],
             raid_battle_ms=raw_raid['raid_battle_ms'],
             raid_spawn_ms=raw_raid['raid_spawn_ms'],
             raid_end_ms=raw_raid['raid_end_ms'],
@@ -585,7 +587,7 @@ def add_raid_sighting(session, raw_raid):
             move_2=raw_raid['move_2'],
         )
         session.add(obj)
-    RAID_CACHE.add(raw_raid)
+        RAID_CACHE.add(raw_raid)
 
 def add_pokestop(session, raw_pokestop):
     pokestop_id = raw_pokestop['external_id']
