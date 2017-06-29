@@ -899,7 +899,7 @@ def update_raid(session, raw):
 			move_1 = '{move_1}',
 			move_2 = '{move_2}'
 		WHERE
-			raid_seed = {raid_seed}
+			raid_seed = '{raid_seed}'
 			AND raid_spawn_ms = {raid_spawn_ms}
 			
     '''.format(
