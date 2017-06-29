@@ -21,14 +21,14 @@ except AssertionError:
 log = get_logger(__name__)
 
 if conf.DB_ENGINE.startswith('mysql'):
-    from sqlalchemy.dialects.mysql import TINYINT, MEDIUMINT, BIGINT, DOUBLE, BOOLEAN
+    from sqlalchemy.dialects.mysql import TINYINT, MEDIUMINT, BIGINT, DOUBLE
 
     TINY_TYPE = TINYINT(unsigned=True)          # 0 to 255
     MEDIUM_TYPE = MEDIUMINT(unsigned=True)      # 0 to 4294967295
     HUGE_TYPE = BIGINT(unsigned=True)           # 0 to 18446744073709551615
     FLOAT_TYPE = DOUBLE(precision=17, scale=14, asdecimal=False)
 elif conf.DB_ENGINE.startswith('postgres'):
-    from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, BOOLEAN
+    from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION
 
     class NumInt(TypeDecorator):
         '''Modify Numeric type for integers'''
@@ -305,7 +305,7 @@ class FortSighting(Base):
     fort_id = Column(Integer, ForeignKey('forts.id'))
     last_modified = Column(Integer, index=True)
     team = Column(TINY_TYPE)
-    is_in_battle = Column(BOOLEAN, default=False)
+    is_in_battle = Column(Boolean, default=False)
     guard_pokemon_id = Column(TINY_TYPE)
     slots_available = Column(TINY_TYPE)
     time_ocuppied = Column(Integer)
