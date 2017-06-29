@@ -559,7 +559,7 @@ def add_raid_sighting(session, raw_raid):
         .filter(Fort.external_id == raw_raid['external_id']) \
         .first()
     raid = session.query(RaidSighting) \
-        .filter(RaidSighting.raid_seed == raw_raid['raid_seed']) \
+        .filter(RaidSighting.raid_seed == str(raw_raid['raid_seed'])) \
         .filter(RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']) \
         .first()
 
