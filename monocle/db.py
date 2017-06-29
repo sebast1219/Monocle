@@ -361,7 +361,7 @@ class RaidSighting(Base):
     raid_spawn_ms = Column(Integer, index=True)
     raid_end_ms = Column(Integer, index=True)
     raid_level = Column(Integer)
-    complete = Column(BOOLEAN)
+    complete = Column(Boolean)
     pokemon_id = Column(TINY_TYPE)
     cp = Column(Integer)
     move_1 = Column(SmallInteger)
