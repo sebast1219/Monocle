@@ -831,7 +831,52 @@ class Worker:
                         pokestop = self.normalize_pokestop(fort)
                         db_proc.add(pokestop)
                 elif fort not in FORT_CACHE:
-                    db_proc.add(self.normalize_gym(fort))
+                    request = self.api.create_request()
+                    request.gym_get_info(
+                                            gym_id=fort.id,
+                                            player_lat_degrees = self.location[0],
+                                            player_lng_degrees = self.location[1],
+                                            gym_lat_degrees=fort.latitude,
+                                            gym_lng_degrees=fort.longitude
+                                        )
+                    responses = await self.call(request, action=1.2)
+                    try:
+                        if responses['GYM_GET_INFO'].result != 1:
+                            self.log.warning("Failed to get gym_info {}", fort.id)
+                        else:
+                            gym_get_info = responses['GYM_GET_INFO']
+                            rawFort = {}
+                            rawFort['external_id'] = fort.id
+                            rawFort['name'] = gym_get_info.name
+                            rawFort['lat'] = fort.latitude
+                            rawFort['lon'] = fort.longitude
+                            rawFort['team'] = fort.owned_by_team
+                            rawFort['guard_pokemon_id'] = fort.guard_pokemon_id
+                            rawFort['last_modified'] = fort.last_modified_timestamp_ms // 1000
+                            rawFort['is_in_battle'] = fort.is_in_battle
+                            rawFort['slots_available'] = fort.gym_display.slots_available
+                            rawFort['time_ocuppied'] = fort.gym_display.occupied_millis // 1000
+                            db_proc.add(self.normalize_gym(rawFort))
+
+                            gym_members = gym_get_info.gym_status_and_defenders
+                            
+                            for gym_member in gym_members.gym_defender:
+                                raw_member = {}
+                                raw_member['external_id'] = fort.id
+                                raw_member['player_name'] = gym_member.trainer_public_profile.name
+                                raw_member['player_level'] = gym_member.trainer_public_profile.level
+                                raw_member['pokemon_id'] = gym_member.motivated_pokemon.pokemon.pokemon_id
+                                raw_member['pokemon_cp'] = gym_member.motivated_pokemon.pokemon.cp
+                                raw_member['move_1'] = gym_member.motivated_pokemon.pokemon.move_1
+                                raw_member['move_2'] = gym_member.motivated_pokemon.pokemon.move_2
+                                raw_member['individual_attack'] = gym_member.motivated_pokemon.pokemon.individual_attack
+                                raw_member['individual_defense'] = gym_member.motivated_pokemon.pokemon.individual_defense
+                                raw_member['individual_stamina'] = gym_member.motivated_pokemon.pokemon.individual_stamina
+                                raw_member['time_deploy'] = gym_member.motivated_pokemon.deploy_ms // 1000
+                                raw_member['last_modified'] = rawFort['last_modified']
+                                db_proc.add(self.normalize_gym_member(raw_member))
+                    except KeyError:
+                        self.log.warning("Failed to get gym_info {}", fort.id)
 
             if more_points:
                 try:
@@ -896,6 +941,7 @@ class Worker:
             return hashes_left > usable_per_second * seconds_left + spare
         except (TypeError, KeyError):
             return False
+
 
     async def spin_pokestop(self, pokestop):
         self.error_code = '$'
@@ -1257,13 +1303,34 @@ class Worker:
     def normalize_gym(raw):
         return {
             'type': 'fort',
-            'external_id': raw.id,
-            'lat': raw.latitude,
-            'lon': raw.longitude,
-            'team': raw.owned_by_team,
-            'prestige': raw.gym_points,
-            'guard_pokemon_id': raw.guard_pokemon_id,
-            'last_modified': raw.last_modified_timestamp_ms // 1000,
+            'external_id': raw['external_id'],
+            'name': raw['name'],
+            'lat': raw['lat'],
+            'lon': raw['lon'],
+            'team': raw['team'],
+            'guard_pokemon_id': raw['guard_pokemon_id'],
+            'last_modified': raw['last_modified'],
+            'is_in_battle': raw['is_in_battle'],
+            'slots_available': raw['slots_available'],
+            'time_ocuppied': raw['time_ocuppied']
+        }
+
+    @staticmethod
+    def normalize_gym_member(raw):
+        return {
+            'type': 'fort_member',
+            'external_id' : raw['external_id'],
+            'player_name' : raw['player_name'],
+            'player_level' : raw['player_level'],
+            'pokemon_id' : raw['pokemon_id'],
+            'pokemon_cp' : raw['pokemon_cp'],
+            'move_1' : raw['move_1'],
+            'move_2' : raw['move_2'],
+            'individual_attack' : raw['individual_attack'],
+            'individual_defense' : raw['individual_defense'],
+            'individual_stamina' : raw['individual_stamina'],
+            'time_deploy' : raw['time_deploy'],
+            'last_modified' : raw['last_modified']
         }
 
     @staticmethod
