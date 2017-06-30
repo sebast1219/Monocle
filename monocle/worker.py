@@ -73,6 +73,7 @@ class Worker:
     if conf.PROXIES:
         if len(conf.PROXIES) > 1:
             multiproxy = True
+        blacklistedProxies = set()
         proxies = cycle(conf.PROXIES)
     else:
         proxies = None
@@ -148,7 +149,13 @@ class Worker:
 
     def swap_proxy(self):
         proxy = self.api.proxy
-        while proxy == self.api.proxy:
+        if proxy not in self.blacklistedProxies:
+            self.log.warning("Removing {} because of IP BAN error",proxy)
+            self.blacklistedProxies.add(proxy)
+        if len(self.blacklistedProxies) == len(conf.PROXIES):
+            self.log.warning("Resetting blacklistedProxies because there is no more proxy available")
+            self.blacklistedProxies.clear()
+        while proxy == self.api.proxy or self.api.proxy in self.blacklistedProxies:
             self.api.proxy = next(self.proxies)
 
     async def login(self, reauth=False):
