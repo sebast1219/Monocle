@@ -127,7 +127,7 @@ _valid_types = {
     'TZ_OFFSET': Number,
     'UVLOOP': bool,
     'WEBHOOKS': set_sequence,
-	'LURE_ON_DEMAND': bool
+    'LURE_ON_DEMAND': bool
 }
 
 _defaults = {
