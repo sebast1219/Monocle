@@ -627,36 +627,37 @@ def add_raid_sighting(session, raw_raid):
     fort = session.query(Fort) \
         .filter(Fort.external_id == raw_raid['external_id']) \
         .first()
-    raid = session.query(RaidSighting) \
-        .filter(RaidSighting.raid_seed == raw_raid['raid_seed']) \
-        .filter(RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']) \
-        .first()
-
-    if raid and raid.pokemon_id == None and raw_raid['pokemon_id'] != None:
-        update_raid(session,raw_raid)
-    if fort.id and session.query(exists().where(and_(
-                RaidSighting.fort_id == fort.id,
-                RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']
-            ))).scalar():
-        # Why is it not in the cache? It should be there!
-        RAID_CACHE.add(raw_raid)
-        return
-    else:
-        obj = RaidSighting(
-            fort=fort,
-            raid_seed=raw_raid['raid_seed'],
-            raid_battle_ms=raw_raid['raid_battle_ms'],
-            raid_spawn_ms=raw_raid['raid_spawn_ms'],
-            raid_end_ms=raw_raid['raid_end_ms'],
-            raid_level=raw_raid['raid_level'],
-            complete=raw_raid['complete'],
-            pokemon_id=raw_raid['pokemon_id'],
-            cp=raw_raid['cp'],
-            move_1=raw_raid['move_1'],
-            move_2=raw_raid['move_2'],
-        )
-        session.add(obj)
-        RAID_CACHE.add(raw_raid)
+    if fort:
+        raid = session.query(RaidSighting) \
+            .filter(RaidSighting.raid_seed == raw_raid['raid_seed']) \
+            .filter(RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']) \
+            .first()
+        
+        if raid and raid.pokemon_id == None and raw_raid['pokemon_id'] != None:
+            update_raid(session,raw_raid)
+        if fort.id and session.query(exists().where(and_(
+                    RaidSighting.fort_id == fort.id,
+                    RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']
+                ))).scalar():
+            # Why is it not in the cache? It should be there!
+            RAID_CACHE.add(raw_raid)
+            return
+        else:
+            obj = RaidSighting(
+                fort=fort,
+                raid_seed=raw_raid['raid_seed'],
+                raid_battle_ms=raw_raid['raid_battle_ms'],
+                raid_spawn_ms=raw_raid['raid_spawn_ms'],
+                raid_end_ms=raw_raid['raid_end_ms'],
+                raid_level=raw_raid['raid_level'],
+                complete=raw_raid['complete'],
+                pokemon_id=raw_raid['pokemon_id'],
+                cp=raw_raid['cp'],
+                move_1=raw_raid['move_1'],
+                move_2=raw_raid['move_2'],
+            )
+            session.add(obj)
+            RAID_CACHE.add(raw_raid)
 
 def add_pokestop(session, raw_pokestop):
     pokestop_id = raw_pokestop['external_id']
