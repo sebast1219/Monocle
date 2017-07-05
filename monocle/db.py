@@ -618,15 +618,14 @@ def _get_forts_sqlite(session):
             fs.fort_id,
             fs.id,
             fs.team,
-            fs.prestige,
             fs.guard_pokemon_id,
-            fs.name,
             fs.last_modified,
             fs.is_in_battle,
             fs.slots_available,
             fs.time_ocuppied,
             f.lat,
-            f.lon
+            f.lon,
+            f.name
         FROM fort_sightings fs
         JOIN forts f ON f.id=fs.fort_id
         WHERE fs.fort_id || '-' || fs.last_modified IN (
@@ -644,13 +643,13 @@ def _get_forts(session):
             fs.id,
             fs.team,
             fs.guard_pokemon_id,
-            fs.name,
             fs.last_modified,
             fs.is_in_battle,
             fs.slots_available,
             fs.time_ocuppied,
             f.lat,
-            f.lon
+            f.lon,
+            f.name
         FROM fort_sightings fs
         JOIN forts f ON f.id=fs.fort_id
         WHERE (fs.fort_id, fs.last_modified) IN (
