@@ -716,8 +716,8 @@ class Worker:
             self.error_code = 'KEY EXPIRED'
             err = str(e)
             self.log.error(err)
-            print(err)
-            exit()
+            # print(err)
+            # exit()
         except (ex.MalformedResponseException, ex.UnexpectedResponseException) as e:
             self.log.warning('{} Giving up.', e)
             self.error_code = 'MALFORMED RESPONSE'
