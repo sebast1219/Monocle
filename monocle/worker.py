@@ -815,7 +815,8 @@ class Worker:
                         except Exception as e:
                             self.log.warning('{} during encounter', e.__class__.__name__)
                     LOOP.create_task(self.notifier.notify(normalized, map_objects.time_of_day))
-                db_proc.add(normalized)
+                if normalized['pokemon_id'] not in conf.TRASH_IDS:
+                    db_proc.add(normalized)
 
             for fort in map_cell.forts:
                 if not fort.enabled:
