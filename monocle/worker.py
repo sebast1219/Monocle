@@ -907,10 +907,10 @@ class Worker:
                             fort_raid['cp'] = fort.raid_info.raid_pokemon.cp
                             fort_raid['move_1'] = fort.raid_info.raid_pokemon.move_1
                             fort_raid['move_2'] = fort.raid_info.raid_pokemon.move_2
+                            normalized_raid = self.normalize_raid(fort_raid)
+                            if normalized_raid not in RAID_CACHE:
+                                db_proc.add(normalized_raid)
 
-                        normalized_raid = self.normalize_raid(fort_raid)
-                        if normalized_raid not in RAID_CACHE:
-                            db_proc.add(normalized_raid)
 
             if more_points:
                 try:

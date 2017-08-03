@@ -628,13 +628,6 @@ def add_raid_sighting(session, raw_raid):
         .filter(Fort.external_id == raw_raid['external_id']) \
         .first()
     if fort:
-        raid = session.query(RaidSighting) \
-            .filter(RaidSighting.raid_seed == raw_raid['raid_seed']) \
-            .filter(RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']) \
-            .first()
-        
-        if raid and raid.pokemon_id == None and raw_raid['pokemon_id'] != None:
-            update_raid(session,raw_raid)
         if fort.id and session.query(exists().where(and_(
                     RaidSighting.fort_id == fort.id,
                     RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']
