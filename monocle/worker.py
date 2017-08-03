@@ -940,7 +940,7 @@ class Worker:
             self.empty_visits = 0
         else:
             self.empty_visits += 1
-            if forts_seen == 0:
+            if forts_seen == 0 and not bootstrap:
                 self.log.warning('Nothing seen by {}. Speed: {:.2f}', self.username, self.speed)
                 self.error_code = '0 SEEN'
             else:
