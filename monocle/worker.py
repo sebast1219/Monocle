@@ -1099,7 +1099,7 @@ class Worker:
             pokemon['height'] = pdata.height_m
             pokemon['weight'] = pdata.weight_kg
             pokemon['cp'] = pdata.cp
-			pokemon['level'] = calc_pokemon_level(pdata.cp_multiplier)
+            pokemon['level'] = calc_pokemon_level(pdata.cp_multiplier)
             pokemon['gender'] = pdata.pokemon_display.gender
         except KeyError:
             self.log.error('Missing encounter response.')
