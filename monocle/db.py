@@ -262,6 +262,7 @@ class Sighting(Base):
     move_1 = Column(SmallInteger)
     move_2 = Column(SmallInteger)
     cp = Column(SmallInteger)
+    level = Column(SmallInteger)
 
     __table_args__ = (
         UniqueConstraint(
@@ -291,6 +292,7 @@ class Mystery(Base):
     move_1 = Column(SmallInteger)
     move_2 = Column(SmallInteger)
     cp = Column(SmallInteger)
+    level = Column(SmallInteger)
 
     __table_args__ = (
         UniqueConstraint(
@@ -456,7 +458,8 @@ def add_sighting(session, pokemon):
         sta_iv=pokemon.get('individual_stamina'),
         move_1=pokemon.get('move_1'),
         move_2=pokemon.get('move_2'),
-        cp=pokemon.get('cp')
+        cp=pokemon.get('cp'),
+        level=pokemon.get('level')
     )
     session.add(obj)
     SIGHTING_CACHE.add(pokemon)
@@ -556,7 +559,8 @@ def add_mystery(session, pokemon):
         sta_iv=pokemon.get('individual_stamina'),
         move_1=pokemon.get('move_1'),
         move_2=pokemon.get('move_2'),
-        cp=pokemon.get('cp')
+        cp=pokemon.get('cp'),
+        level=pokemon.get('level')
     )
     session.add(obj)
     MYSTERY_CACHE.add(pokemon)
@@ -984,28 +988,5 @@ def del_lure_to_add(session, pokestop_id):
         WHERE pokestops.external_id = '{pokestop_id}'
     '''.format(
        pokestop_id=pokestop_id,
-    ))
-    session.commit()
-
-def update_raid(session, raw):
-    query = session.execute('''
-        UPDATE fort_raids
-        SET
-			pokemon_id = '{pokemon_id}',
-			cp = '{cp}',
-			move_1 = '{move_1}',
-			move_2 = '{move_2}',
-			notifDiscord = NULL
-		WHERE
-			raid_seed = {raid_seed}
-			AND raid_spawn_ms = {raid_spawn_ms}
-			
-    '''.format(
-       raid_seed=raw['raid_seed'],
-       raid_spawn_ms=raw['raid_spawn_ms'],
-       pokemon_id=raw['pokemon_id'],
-       cp=raw['cp'],
-       move_1=raw['move_1'],
-       move_2=raw['move_2'],
     ))
     session.commit()
