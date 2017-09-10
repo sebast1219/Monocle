@@ -191,7 +191,7 @@ class Worker:
         if err:
             raise err
 
-        version = 6901
+        version = 7301
         self.error_code = '-'
         async with self.sim_semaphore:
             self.error_code = 'APP SIMULATION'
@@ -606,9 +606,9 @@ class Worker:
             else:
                 if (not dl_hash
                         and conf.FORCED_KILL
-                        and dl_settings.settings.minimum_client_version != '0.69.1'):
+                        and dl_settings.settings.minimum_client_version != '0.73.1'):
                     forced_version = StrictVersion(dl_settings.settings.minimum_client_version)
-                    if forced_version > StrictVersion('0.69.1'):
+                    if forced_version > StrictVersion('0.73.1'):
                         err = '{} is being forced, exiting.'.format(forced_version)
                         self.log.error(err)
                         print(err)
@@ -910,9 +910,9 @@ class Worker:
                             fort_raid['cp'] = fort.raid_info.raid_pokemon.cp
                             fort_raid['move_1'] = fort.raid_info.raid_pokemon.move_1
                             fort_raid['move_2'] = fort.raid_info.raid_pokemon.move_2
-                            normalized_raid = self.normalize_raid(fort_raid)
-                            if normalized_raid not in RAID_CACHE:
-                                db_proc.add(normalized_raid)
+                        normalized_raid = self.normalize_raid(fort_raid)
+                        if normalized_raid not in RAID_CACHE:
+                            db_proc.add(normalized_raid)
 
 
             if more_points:

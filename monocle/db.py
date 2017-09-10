@@ -632,6 +632,13 @@ def add_raid_sighting(session, raw_raid):
         .filter(Fort.external_id == raw_raid['external_id']) \
         .first()
     if fort:
+        raid = session.query(RaidSighting) \
+            .filter(RaidSighting.raid_seed == raw_raid['raid_seed']) \
+            .filter(RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']) \
+            .first()
+        
+        if raid and raid.pokemon_id == None and raw_raid['pokemon_id'] != None:
+            update_raid(session,raw_raid)
         if fort.id and session.query(exists().where(and_(
                     RaidSighting.fort_id == fort.id,
                     RaidSighting.raid_spawn_ms == raw_raid['raid_spawn_ms']
@@ -988,5 +995,29 @@ def del_lure_to_add(session, pokestop_id):
         WHERE pokestops.external_id = '{pokestop_id}'
     '''.format(
        pokestop_id=pokestop_id,
+    ))
+    session.commit()
+	
+
+def update_raid(session, raw):
+    query = session.execute('''
+        UPDATE fort_raids
+        SET
+			pokemon_id = '{pokemon_id}',
+			cp = '{cp}',
+			move_1 = '{move_1}',
+			move_2 = '{move_2}',
+			notifDiscord = NULL
+		WHERE
+			raid_seed = {raid_seed}
+			AND raid_spawn_ms = {raid_spawn_ms}
+			
+    '''.format(
+       raid_seed=raw['raid_seed'],
+       raid_spawn_ms=raw['raid_spawn_ms'],
+       pokemon_id=raw['pokemon_id'],
+       cp=raw['cp'],
+       move_1=raw['move_1'],
+       move_2=raw['move_2'],
     ))
     session.commit()
