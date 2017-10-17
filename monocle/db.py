@@ -692,12 +692,13 @@ def update_failures(session, spawn_id, success, allowed=conf.FAILURES_ALLOWED):
                 log.warning('{} consecutive failures on {}, no longer treating as an hour spawn.', allowed + 1, spawn_id)
             else:
                 spawnpoint.updated = 0
-                try:
-                    del spawns.despawn_times[spawn_id]
-                except KeyError:
-                    pass
-                log.warning('{} consecutive failures on {}, will treat as an unknown from now on.', allowed + 1, spawn_id)
-            spawnpoint.failures = 0
+                # try:
+                    # del spawns.despawn_times[spawn_id]
+                # except KeyError:
+                    # pass
+                # log.warning('{} consecutive failures on {}, will treat as an unknown from now on.', allowed + 1, spawn_id)
+                log.warning('{} consecutive failures on {}, maybe shadowban.', allowed + 1, spawn_id)
+            # spawnpoint.failures = 0
         else:
             spawnpoint.failures += 1
     except TypeError:
