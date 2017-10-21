@@ -126,7 +126,7 @@ def report_main(area_name=conf.AREA_NAME,
 
         count = sum(counts.values())
         counts_tuple = tuple(counts.items())
-        nonexistent = [(x, names[x]) for x in range(1, 252) if x not in counts]
+        nonexistent = [(x, names[x]) for x in range(1, 387) if x not in counts]
         del counts
 
         top_pokemon = list(counts_tuple[-30:])
