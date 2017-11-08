@@ -1250,25 +1250,25 @@ class Worker:
             if not response.get('status') == 1:
                 self.log.error("Failed to get CAPTCHA response: {}", token)
                 raise CaptchaSolveException
-        # else:
-            # try:
-                # acclient = AnticaptchaClient(conf.CAPTCHA_KEY)
-                # actask = NoCaptchaTaskProxylessTask(challenge_url, '6LeeTScTAAAAADqvhqVMhPpr_vB9D364Ia-1dSgK')
-                # acjob = acclient.createTask(actask)
-                # acjob.join()
-                # token = acjob.get_solution_response()
-            # except AnticatpchaException as e:
-                # self.log.error('AntiCaptcha error: {}, {}', e.error_code, e.error_description)
-                # raise CaptchaException from e
-            # except Exception as e:
-                # self.log.error('Other error from anticaptcha')
-                # raise CaptchaException from e
+        else:
+            try:
+                acclient = AnticaptchaClient(conf.CAPTCHA_KEY)
+                actask = NoCaptchaTaskProxylessTask(challenge_url, '6LeeTScTAAAAADqvhqVMhPpr_vB9D364Ia-1dSgK')
+                acjob = acclient.createTask(actask)
+                acjob.join()
+                token = acjob.get_solution_response()
+            except AnticatpchaException as e:
+                self.log.error('AntiCaptcha error: {}, {}', e.error_code, e.error_description)
+                raise CaptchaException from e
+            except Exception as e:
+                self.log.error('Other error from anticaptcha')
+                raise CaptchaException from e
 
-        # request = self.api.create_request()
-        # request.verify_challenge(token=token)
-        # await self.call(request, action=4)
-        # await self.update_accounts_dict()
-        # self.log.warning("Successfully solved CAPTCHA")
+        request = self.api.create_request()
+        request.verify_challenge(token=token)
+        await self.call(request, action=4)
+        await self.update_accounts_dict()
+        self.log.warning("Successfully solved CAPTCHA")
 
     def simulate_jitter(self, amount=0.00002):
         '''Slightly randomize location, by up to ~3 meters by default.'''
