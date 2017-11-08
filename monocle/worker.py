@@ -808,7 +808,7 @@ class Worker:
                             db_proc.add(normalized)
                             raise
                         except Exception as e:
-                            self.log.warning('{} during encounter', e.__class__.__name__)
+                            self.log.warning('during encounter', e.__class__.__name__)
 
                 if notify_conf and self.notifier.eligible(normalized):
                     if encounter_conf and 'move_1' not in normalized:
