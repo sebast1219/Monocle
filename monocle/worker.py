@@ -808,7 +808,7 @@ class Worker:
                             db_proc.add(normalized)
                             raise
                         except Exception as e:
-                            self.log.warning('during encounter', e.__class__.__name__)
+                            self.log.warning('{} during encounter', e.__class__.__name__)
 
                 if notify_conf and self.notifier.eligible(normalized):
                     if encounter_conf and 'move_1' not in normalized:
@@ -1107,19 +1107,28 @@ class Worker:
             elif self.player_level < 6:
                 request = self.api.create_request()
                 self.log.warning('Player lvl {} Trying to catch pokemon to get exp', self.player_level)
-                request.catch_pokemon(
-                    encounter_id=pokemon['encounter_id'],
-                    pokeball=1,
-                    normalized_reticle_size=1.950,
-                    spawn_point_id=spawn_id,
-                    hit_pokemon=True,
-                    spin_modifier=0.850,
-                    normalized_hit_position=1.0)
-                response = await self.call(request, action=1)
-                try:
-                    catch_pokemon_status = response['CATCH_POKEMON'].status
-                except KeyError:
-                    self.log.error('Missing catch response.')
+                while True:
+                    request.catch_pokemon(
+                        encounter_id=pokemon['encounter_id'],
+                        pokeball=1,
+                        normalized_reticle_size=1.950,
+                        spawn_point_id=spawn_id,
+                        hit_pokemon=True,
+                        spin_modifier=0.850,
+                        normalized_hit_position=1.0)
+                    response = await self.call(request, action=1)
+                    try:
+                        catch_pokemon_status = response['CATCH_POKEMON'].status
+                        if catch_pokemon_status == 1:
+                            self.log.warning('Pokemon cached :)')
+                            break;
+                        elif catch_pokemon_status == 3:
+                            self.log.warning('Pokemon fled :(')
+                            break;
+                        else:
+                            self.log.warning('Pokemon escaped! Retrying...')
+                    except KeyError:
+                        self.log.error('Missing catch response.')
         except KeyError:
             self.log.error('Missing encounter response.')
         self.error_code = '!'
