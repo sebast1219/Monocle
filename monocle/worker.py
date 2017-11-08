@@ -1241,7 +1241,7 @@ class Worker:
         request = self.api.create_request()
         request.verify_challenge(token=token)
         await self.call(request, action=4)
-        await self.update_accounts_dict()
+        self.update_accounts_dict()
         self.log.warning("Successfully solved CAPTCHA")
 
     def simulate_jitter(self, amount=0.00002):
