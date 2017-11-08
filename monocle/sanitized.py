@@ -125,6 +125,7 @@ _valid_types = {
     'TWITTER_CONSUMER_SECRET': str,
     'TWITTER_SCREEN_NAME': str,
     'TZ_OFFSET': Number,
+    'USE_ANTICAPTCHA': bool,
     'UVLOOP': bool,
     'WEBHOOKS': set_sequence,
     'LURE_ON_DEMAND': bool
@@ -231,6 +232,7 @@ _defaults = {
     'TWITTER_CONSUMER_SECRET': None,
     'TWITTER_SCREEN_NAME': None,
     'TZ_OFFSET': None,
+    'USE_ANTICAPTCHA': False,
     'UVLOOP': True,
     'WEBHOOKS': None,
     'LURE_ON_DEMAND': False
