@@ -801,7 +801,7 @@ class Worker:
                     if ((encounter_conf == 'all'
                             or (encounter_conf == 'some'
                             and normalized['pokemon_id'] in conf.ENCOUNTER_IDS))
-                        and self.player_level != None and self.player_level >= 30):
+                        and (self.player_level != None and (self.player_level < 6 or self.player_level >= 30))):
                         try:
                             await self.encounter(normalized, pokemon.spawn_point_id)
                         except CancelledError:
@@ -818,7 +818,7 @@ class Worker:
                             db_proc.add(normalized)
                             raise
                         except Exception as e:
-                            self.log.warning('{} during encounter', e.__class__.__name__)
+                            self.log.warning('{} during encounter : ', e.__class__.__name__)
                     LOOP.create_task(self.notifier.notify(normalized, map_objects.time_of_day))
                 if normalized['pokemon_id'] not in conf.TRASH_IDS:
                     db_proc.add(normalized)
@@ -1093,16 +1093,33 @@ class Worker:
 
         try:
             pdata = responses['ENCOUNTER'].wild_pokemon.pokemon_data
-            pokemon['move_1'] = pdata.move_1
-            pokemon['move_2'] = pdata.move_2
-            pokemon['individual_attack'] = pdata.individual_attack
-            pokemon['individual_defense'] = pdata.individual_defense
-            pokemon['individual_stamina'] = pdata.individual_stamina
-            pokemon['height'] = pdata.height_m
-            pokemon['weight'] = pdata.weight_kg
-            pokemon['cp'] = pdata.cp
-            pokemon['level'] = calc_pokemon_level(pdata.cp_multiplier)
-            pokemon['gender'] = pdata.pokemon_display.gender
+            if self.player_level != None and self.player_level >= 30:
+                pokemon['move_1'] = pdata.move_1
+                pokemon['move_2'] = pdata.move_2
+                pokemon['individual_attack'] = pdata.individual_attack
+                pokemon['individual_defense'] = pdata.individual_defense
+                pokemon['individual_stamina'] = pdata.individual_stamina
+                pokemon['height'] = pdata.height_m
+                pokemon['weight'] = pdata.weight_kg
+                pokemon['cp'] = pdata.cp
+                pokemon['level'] = calc_pokemon_level(pdata.cp_multiplier)
+                pokemon['gender'] = pdata.pokemon_display.gender
+            elif self.player_level < 6:
+                request = self.api.create_request()
+                self.log.warning('Player lvl {} Trying to catch pokemon to get exp', self.player_level)
+                request.catch_pokemon(
+                    encounter_id=pokemon['encounter_id'],
+                    pokeball=1,
+                    normalized_reticle_size=1.950,
+                    spawn_point_id=spawn_id,
+                    hit_pokemon=True,
+                    spin_modifier=0.850,
+                    normalized_hit_position=1.0)
+                response = await self.call(request, action=1)
+                try:
+                    catch_pokemon_status = response['CATCH_POKEMON'].status
+                except KeyError:
+                    self.log.error('Missing catch response.')
         except KeyError:
             self.log.error('Missing encounter response.')
         self.error_code = '!'
@@ -1224,25 +1241,25 @@ class Worker:
             if not response.get('status') == 1:
                 self.log.error("Failed to get CAPTCHA response: {}", token)
                 raise CaptchaSolveException
-        else:
-            try:
-                acclient = AnticaptchaClient(conf.CAPTCHA_KEY)
-                actask = NoCaptchaTaskProxylessTask(challenge_url, '6LeeTScTAAAAADqvhqVMhPpr_vB9D364Ia-1dSgK')
-                acjob = acclient.createTask(actask)
-                acjob.join()
-                token = acjob.get_solution_response()
-            except AnticatpchaException as e:
-                self.log.error('AntiCaptcha error: {}, {}', e.error_code, e.error_description)
-                raise CaptchaException from e
-            except Exception as e:
-                self.log.error('Other error from anticaptcha')
-                raise CaptchaException from e
+        # else:
+            # try:
+                # acclient = AnticaptchaClient(conf.CAPTCHA_KEY)
+                # actask = NoCaptchaTaskProxylessTask(challenge_url, '6LeeTScTAAAAADqvhqVMhPpr_vB9D364Ia-1dSgK')
+                # acjob = acclient.createTask(actask)
+                # acjob.join()
+                # token = acjob.get_solution_response()
+            # except AnticatpchaException as e:
+                # self.log.error('AntiCaptcha error: {}, {}', e.error_code, e.error_description)
+                # raise CaptchaException from e
+            # except Exception as e:
+                # self.log.error('Other error from anticaptcha')
+                # raise CaptchaException from e
 
-        request = self.api.create_request()
-        request.verify_challenge(token=token)
-        await self.call(request, action=4)
-        self.update_accounts_dict()
-        self.log.warning("Successfully solved CAPTCHA")
+        # request = self.api.create_request()
+        # request.verify_challenge(token=token)
+        # await self.call(request, action=4)
+        # await self.update_accounts_dict()
+        # self.log.warning("Successfully solved CAPTCHA")
 
     def simulate_jitter(self, amount=0.00002):
         '''Slightly randomize location, by up to ~3 meters by default.'''
