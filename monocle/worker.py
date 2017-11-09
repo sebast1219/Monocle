@@ -837,7 +837,7 @@ class Worker:
                         await self.add_lure_pokestop(fort)
                     if (self.pokestops and
                             self.bag_items < self.item_capacity
-                            and time() > self.next_spin
+                            and (time() > self.next_spin or (self.player_level != None and self.player_level < 6))
                             and (not conf.SMART_THROTTLE or
                             self.smart_throttle(2))):
                         cooldown = fort.cooldown_complete_timestamp_ms
@@ -1043,6 +1043,7 @@ class Worker:
             return
 
         if result == 1:
+            self.log.warning('Pokestop spinned.')
             self.log.info('Spun {}.', name)
         elif result == 2:
             self.log.info('The server said {} was out of spinning range. {:.1f}m {:.1f}{}',
@@ -1106,29 +1107,38 @@ class Worker:
                 pokemon['gender'] = pdata.pokemon_display.gender
             elif self.player_level < 6:
                 request = self.api.create_request()
-                self.log.warning('Player lvl {} Trying to catch pokemon to get exp', self.player_level)
-                while True:
-                    request.catch_pokemon(
-                        encounter_id=pokemon['encounter_id'],
-                        pokeball=1,
-                        normalized_reticle_size=1.950,
-                        spawn_point_id=spawn_id,
-                        hit_pokemon=True,
-                        spin_modifier=0.850,
-                        normalized_hit_position=1.0)
-                    response = await self.call(request, action=1)
-                    try:
-                        catch_pokemon_status = response['CATCH_POKEMON'].status
-                        if catch_pokemon_status == 1:
-                            self.log.warning('Pokemon cached :)')
+                for item, count in self.items.items():
+                    if item == 1:
+                        if count == 0:
+                            # self.log.warning('Not enough pokeballs to catch pokemon', self.player_level)
                             break;
-                        elif catch_pokemon_status == 3:
-                            self.log.warning('Pokemon fled :(')
-                            break;
-                        else:
-                            self.log.warning('Pokemon escaped! Retrying...')
-                    except KeyError:
-                        self.log.error('Missing catch response.')
+                        self.log.warning('Player lvl {} Trying to catch pokemon to get exp', self.player_level)
+                        try:
+                            request.catch_pokemon(
+                                encounter_id=pokemon['encounter_id'],
+                                pokeball=1,
+                                normalized_reticle_size=1.950,
+                                spawn_point_id=spawn_id,
+                                hit_pokemon=True,
+                                spin_modifier=0.850,
+                                normalized_hit_position=1.0)
+                            response = await self.call(request, action=1)
+                            try:
+                                catch_pokemon_status = response['CATCH_POKEMON'].status
+                                if catch_pokemon_status == 1:
+                                    self.log.warning('Pokemon cached :)')
+                                elif catch_pokemon_status == 3:
+                                    self.log.warning('Pokemon fled :(')
+                                else:
+                                    self.log.warning('Pokemon escaped')
+                            except KeyError:
+                                self.log.error('Missing catch response.')
+				        		
+                        except ex.BadRPCException:
+                            self.error_code = 'BAD REQUEST'
+                            self.log.warning('{} received code 3 and is likely banned. Removing until next run.', self.username)
+                            await self.new_account()
+                        break;
         except KeyError:
             self.log.error('Missing encounter response.')
         self.error_code = '!'
