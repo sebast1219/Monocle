@@ -875,23 +875,24 @@ class Worker:
                                 rawFort['time_ocuppied'] = fort.gym_display.occupied_millis // 1000
                                 db_proc.add(self.normalize_gym(rawFort))
 
-                                gym_members = gym_get_info.gym_status_and_defenders
-                                
-                                for gym_member in gym_members.gym_defender:
-                                    raw_member = {}
-                                    raw_member['external_id'] = fort.id
-                                    raw_member['player_name'] = gym_member.trainer_public_profile.name
-                                    raw_member['player_level'] = gym_member.trainer_public_profile.level
-                                    raw_member['pokemon_id'] = gym_member.motivated_pokemon.pokemon.pokemon_id
-                                    raw_member['pokemon_cp'] = gym_member.motivated_pokemon.pokemon.cp
-                                    raw_member['move_1'] = gym_member.motivated_pokemon.pokemon.move_1
-                                    raw_member['move_2'] = gym_member.motivated_pokemon.pokemon.move_2
-                                    raw_member['individual_attack'] = gym_member.motivated_pokemon.pokemon.individual_attack
-                                    raw_member['individual_defense'] = gym_member.motivated_pokemon.pokemon.individual_defense
-                                    raw_member['individual_stamina'] = gym_member.motivated_pokemon.pokemon.individual_stamina
-                                    raw_member['time_deploy'] = gym_member.motivated_pokemon.deploy_ms // 1000
-                                    raw_member['last_modified'] = rawFort['last_modified']
-                                    db_proc.add(self.normalize_gym_member(raw_member))
+                                if conf.SCAN_GYM_MEMBERS == True:
+                                    gym_members = gym_get_info.gym_status_and_defenders
+                                    
+                                    for gym_member in gym_members.gym_defender:
+                                        raw_member = {}
+                                        raw_member['external_id'] = fort.id
+                                        raw_member['player_name'] = gym_member.trainer_public_profile.name
+                                        raw_member['player_level'] = gym_member.trainer_public_profile.level
+                                        raw_member['pokemon_id'] = gym_member.motivated_pokemon.pokemon.pokemon_id
+                                        raw_member['pokemon_cp'] = gym_member.motivated_pokemon.pokemon.cp
+                                        raw_member['move_1'] = gym_member.motivated_pokemon.pokemon.move_1
+                                        raw_member['move_2'] = gym_member.motivated_pokemon.pokemon.move_2
+                                        raw_member['individual_attack'] = gym_member.motivated_pokemon.pokemon.individual_attack
+                                        raw_member['individual_defense'] = gym_member.motivated_pokemon.pokemon.individual_defense
+                                        raw_member['individual_stamina'] = gym_member.motivated_pokemon.pokemon.individual_stamina
+                                        raw_member['time_deploy'] = gym_member.motivated_pokemon.deploy_ms // 1000
+                                        raw_member['last_modified'] = rawFort['last_modified']
+                                        db_proc.add(self.normalize_gym_member(raw_member))
                         except KeyError:
                             self.log.warning("Failed to get gym_info {}", fort.id)
                     if fort.HasField('raid_info'):

@@ -128,7 +128,8 @@ _valid_types = {
     'USE_ANTICAPTCHA': bool,
     'UVLOOP': bool,
     'WEBHOOKS': set_sequence,
-    'LURE_ON_DEMAND': bool
+    'LURE_ON_DEMAND': bool,
+    'SCAN_GYM_MEMBERS': bool
 }
 
 _defaults = {
@@ -235,7 +236,8 @@ _defaults = {
     'USE_ANTICAPTCHA': False,
     'UVLOOP': True,
     'WEBHOOKS': None,
-    'LURE_ON_DEMAND': False
+    'LURE_ON_DEMAND': False,
+    'SCAN_GYM_MEMBERS': True
 }
 
 
