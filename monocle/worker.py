@@ -801,7 +801,7 @@ class Worker:
                     if ((encounter_conf == 'all'
                             or (encounter_conf == 'some'
                             and normalized['pokemon_id'] in conf.ENCOUNTER_IDS))
-                        and (self.player_level != None and (self.player_level < 6 or self.player_level >= 30))):
+                        and (self.player_level != None and (self.player_level < 2 or self.player_level >= 30))):
                         try:
                             await self.encounter(normalized, pokemon.spawn_point_id)
                         except CancelledError:
@@ -837,7 +837,7 @@ class Worker:
                         await self.add_lure_pokestop(fort)
                     if (self.pokestops and
                             self.bag_items < self.item_capacity
-                            and (time() > self.next_spin or (self.player_level != None and self.player_level < 6))
+                            and (time() > self.next_spin or (self.player_level != None and self.player_level < 2))
                             and (not conf.SMART_THROTTLE or
                             self.smart_throttle(2))):
                         cooldown = fort.cooldown_complete_timestamp_ms
@@ -1105,7 +1105,7 @@ class Worker:
                 pokemon['cp'] = pdata.cp
                 pokemon['level'] = calc_pokemon_level(pdata.cp_multiplier)
                 pokemon['gender'] = pdata.pokemon_display.gender
-            elif self.player_level < 6:
+            elif self.player_level < 2:
                 request = self.api.create_request()
                 for item, count in self.items.items():
                     if item == 1:
